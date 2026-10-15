@@ -250,6 +250,13 @@ export class UI {
   showFactions() {
     clearInterval(this.introTimer);
     this.showScreen('screen-factions');
+    const relocked = this.meta.relocked || [];
+    $('fac-relock').hidden = !relocked.length;
+    if (relocked.length) {
+      $('fac-relock').innerHTML = `<b>Faction unlocks reset to the new rules.</b> Re-locked: ${relocked.map((fid) => FACTIONS[fid].name).join(', ')}. Their chronons and Chrono Lab upgrades are kept for when you earn them back.`;
+      this.meta.relocked = [];
+      this.app.saveMeta();
+    }
     const open = FACTION_ORDER.filter((fid) => isFactionUnlocked(this.meta, fid)).length;
     $('fac-count').textContent = `${open} of ${FACTION_ORDER.length} factions unlocked`;
     $('fac-grid').innerHTML = FACTION_ORDER.map((fid) => {

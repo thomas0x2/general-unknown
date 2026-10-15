@@ -328,3 +328,6 @@ h1 { font-size: clamp(44px, 9vw, 104px); margin: 10px 0 4px; letter-spacing: 0.1
 .fac-goal.done .fac-goal-row b { color: var(--good); }
 .fac-scope { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .fac-lock-head .fac-lock-hint { font-size: 13px; }
+
+.fac-relock { border-left: 3px solid var(--warn); background: rgba(255, 201, 60, 0.08); padding: 8px 12px; color: #ffe4a0; font-size: 15px; }
+.fac-relock b { color: #fff; }

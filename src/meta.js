@@ -73,8 +73,11 @@ export function defaultProfile() {
   };
 }
 
+// Bump when faction unlock rules change: older saves get their unlocks re-checked from scratch.
+export const UNLOCK_RULES = 2;
+
 export function defaultMeta() {
-  return { version: 2, seenIntro: false, faction: null, profiles: {}, unlocked: ['valdara'], milestones: defaultMilestones() };
+  return { version: 2, seenIntro: false, faction: null, profiles: {}, unlocked: ['valdara'], milestones: defaultMilestones(), unlockRules: UNLOCK_RULES, relocked: [] };
 }
 
 function defaultMilestones() {
@@ -137,8 +140,7 @@ export function refreshUnlocks(meta) {
     changed = false;
     for (const fid of FACTION_ORDER) {
       if (isFactionUnlocked(meta, fid)) continue;
-      // anyone who already played a faction (older saves) keeps it
-      if (unlockProgress(meta, fid).done || meta.profiles[fid]?.runs > 0) {
+      if (unlockProgress(meta, fid).done) {
         meta.unlocked.push(fid);
         fresh.push(fid);
         changed = true;
@@ -158,10 +160,20 @@ export function loadMeta() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
-      const m = { ...defaultMeta(), ...JSON.parse(raw) };
+      const saved = JSON.parse(raw);
+      const m = { ...defaultMeta(), ...saved };
       for (const k of Object.keys(m.profiles)) m.profiles[k] = { ...defaultProfile(), ...m.profiles[k] };
       m.milestones = { ...defaultMilestones(), ...m.milestones };
       if (!m.unlocked.includes('valdara')) m.unlocked.unshift('valdara');
+      if ((saved.unlockRules || 1) < UNLOCK_RULES) {
+        // re-check every unlock under the current rules; faction profiles (chronons, upgrades) are kept
+        const before = m.unlocked.slice();
+        m.unlocked = ['valdara'];
+        m.unlockRules = UNLOCK_RULES;
+        refreshUnlocks(m);
+        m.relocked = before.filter((fid) => !m.unlocked.includes(fid));
+        saveMeta(m);
+      }
       refreshUnlocks(m);
       if (m.faction && !isFactionUnlocked(m, m.faction)) m.faction = 'valdara';
       return m;

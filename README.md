@@ -54,8 +54,9 @@ timeline with any faction; "one timeline" goals must be achieved within a single
 Locked factions show each goal's progress on the faction screen. You're alerted mid-run the moment
 the last goal is met, and the new faction is revealed at the end of that timeline.
 
-Saves from before factions existed are migrated into the Valdaran profile. Factions you already
-unlocked or played under the earlier, easier rules stay unlocked.
+Saves from before factions existed are migrated into the Valdaran profile. Saves made under the
+earlier, easier unlock rules have their faction unlocks re-checked against these rules once (the
+faction screen says which were re-locked); chronons and Chrono Lab upgrades are always kept.
 
 ## How it works
 

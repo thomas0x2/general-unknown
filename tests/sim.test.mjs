@@ -266,6 +266,29 @@ test('separate save profiles and v1 migration', () => {
   assert.ok(defaultMeta().profiles);
 });
 
+test('saves from the old unlock rules are re-checked', () => {
+  const store = {};
+  globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+  const old = defaultMeta();
+  delete old.unlockRules;
+  old.unlocked = ['valdara', 'ironguard', 'swarm', 'forge', 'skyrep'];
+  old.faction = 'swarm';
+  old.profiles.swarm = { ...defaultProfile(), runs: 3, chronons: 120, levels: { stinger: 1 } };
+  old.milestones.infantry = 320; // enough infantry for Iron Guard...
+  old.profiles.valdara = { ...defaultProfile(), bestWave: 12 }; // ...and wave 12 reached
+  store['general-unknown-meta-v2'] = JSON.stringify(old);
+  const m = loadMeta();
+  assert.deepEqual(m.unlocked.sort(), ['ironguard', 'valdara'], 'only factions that meet the new rules stay');
+  assert.deepEqual(m.relocked.sort(), ['forge', 'skyrep', 'swarm']);
+  assert.equal(m.faction, 'valdara', 'a re-locked faction is deselected');
+  assert.equal(m.profiles.swarm.chronons, 120, 'faction progress is kept');
+  assert.ok(!isFactionUnlocked(m, 'swarm'), 'having played a faction no longer unlocks it');
+  const again = loadMeta();
+  assert.equal(again.relocked.length, 3, 'the reset is saved immediately and runs only once');
+  assert.deepEqual(again.unlocked.sort(), ['ironguard', 'valdara']);
+  delete globalThis.localStorage;
+});
+
 test('factions unlock through hard, chained milestones', () => {
   const meta = defaultMeta();
   for (const fid of FACTION_ORDER) assert.equal(isFactionUnlocked(meta, fid), fid === 'valdara', `${fid} initial lock state`);
