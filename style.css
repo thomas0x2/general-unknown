@@ -15,6 +15,7 @@
   --violet: #b48cff;
   --font: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
   --mono: 'Share Tech Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
