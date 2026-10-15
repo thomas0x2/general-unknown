@@ -21,7 +21,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; user-select: none; -webkit-user-select: none; }
 [hidden] { display: none !important; }
-canvas#world { position: fixed; inset: 0; display: block; cursor: default; }
+canvas#world { position: fixed; top: 0; left: 0; display: block; cursor: default; }
 canvas#world.amove { cursor: crosshair; }
 button { font-family: var(--font); font-weight: 600; letter-spacing: 0.06em; color: var(--text); background: var(--panel2); border: 1px solid var(--line2); padding: 8px 14px; cursor: pointer; text-transform: uppercase; transition: background 0.12s, border-color 0.12s, color 0.12s; }
 button:hover:not(:disabled) { border-color: var(--accent); color: #fff; background: rgba(57, 213, 255, 0.12); }
@@ -331,3 +331,6 @@ h1 { font-size: clamp(44px, 9vw, 104px); margin: 10px 0 4px; letter-spacing: 0.1
 
 .fac-relock { border-left: 3px solid var(--warn); background: rgba(255, 201, 60, 0.08); padding: 8px 12px; color: #ffe4a0; font-size: 15px; }
 .fac-relock b { color: #fff; }
+
+.ico-compute { background: #7fd1ff; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.ico-ore { background: var(--neutral, #d8c26a); clip-path: polygon(50% 0, 85% 35%, 70% 100%, 30% 100%, 15% 35%); }

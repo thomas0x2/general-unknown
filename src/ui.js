@@ -52,13 +52,16 @@ const MANUAL = `
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
 <li><b>Research.</b> Your research program produces random upgrades of five rarities. Press <kbd>Tab</kbd> when a breakthrough is ready.</li>
-<li><b>Scout.</b> The map is covered by fog of war. Drones and radar reveal it. Capture <b>rare-earth sites</b> (stand troops on them) for extra income and grab <b>supply caches</b>.</li>
+<li><b>Mine.</b> Income comes from <b>rare-earth deposits</b>: build a <b>Mine</b> on a deposit and enough <b>Refineries</b> to process the ore (the HQ refines one mine, each Refinery two more). Far deposits need an <b>Outpost</b> first: expensive, but it can be built anywhere you have scouted and extends your build area.</li>
+<li><b>Scout.</b> The map is covered by fog of war. Drones and radar reveal it, but drones can only fly within range of your HQ, Drone Bays, Outposts and <b>Uplink Towers</b>. Grab <b>supply caches</b> on the way.</li>
+<li><b>Supply and compute.</b> Infantry and aircraft use supply (Logistics Hubs); drones and robots use compute (<b>Data Centers</b>).</li>
 <li><b>Strike back.</b> Find the enemy and destroy their <b>Forward Outposts</b> (waves launch from them) and base <b>facilities</b> — each one permanently weakens the enemy for this timeline. Destroying <b>Hegemony Command</b> wins the war.</li>
 </ul>
 <h3>Controls</h3>
 <table>
 <tr><td>Left click / drag</td><td>Select units (drag a box). Shift adds to selection. Double-click selects all of a type on screen.</td></tr>
 <tr><td>W A S D / arrows</td><td>Move along the map (hold Shift to move faster). Screen edges, middle-drag and the minimap also work; the mouse wheel zooms.</td></tr>
+<tr><td>Shift + order</td><td>Queue move, attack-move and attack orders as waypoints.</td></tr>
 <tr><td>Right click</td><td>Move / attack. With a production building selected: set rally point.</td></tr>
 <tr><td>Q + click</td><td>Attack-move: advance and engage everything on the way.</td></tr>
 <tr><td>E / R (or H)</td><td>Stop / hold position.</td></tr>
@@ -497,6 +500,12 @@ export class UI {
     const sup = $('t-supply');
     sup.textContent = `${g.supplyUsed}/${g.supplyCap}`;
     sup.style.color = g.supplyUsed >= g.supplyCap ? 'var(--danger)' : '';
+    const cmp = $('t-compute');
+    cmp.textContent = `${g.computeUsed}/${g.computeCap}`;
+    cmp.style.color = g.computeUsed >= g.computeCap ? 'var(--danger)' : '';
+    const mn = $('t-mines');
+    mn.textContent = `${g.mines.refined}/${g.mines.total}`;
+    mn.style.color = g.mines.total > g.mines.refined ? 'var(--warn)' : '';
     const R = g.research;
     $('t-rbar').style.width = `${Math.min(100, (R.points / R.needed) * 100)}%`;
     $('btn-research').hidden = R.ready <= 0;
@@ -768,8 +777,10 @@ export class UI {
     const k = el.dataset.tip;
     if (!g && !['newmap', 'escalation'].includes(k)) return '';
     switch (k) {
-      case 'credits': return `<h5>Credits</h5><p>Income: HQ ${BUILDINGS.hq.income}/s, Fabricators +${BUILDINGS.fabricator.income}/s, captured rare-earth sites +2.5/s. Current: <b>${g.income.toFixed(1)}/s</b>.</p>`;
-      case 'supply': return '<h5>Supply</h5><p>Each unit costs supply. HQ provides 12, each Logistics Hub +8.</p>';
+      case 'credits': return `<h5>Credits</h5><p>Income: HQ ${BUILDINGS.hq.income}/s plus +4/s for every refined rare-earth mine. Current: <b>${g.income.toFixed(1)}/s</b>.</p>`;
+      case 'supply': return '<h5>Supply</h5><p>Infantry and aircraft need supply. HQ provides 12, each Logistics Hub +8.</p>';
+      case 'compute': return '<h5>Compute</h5><p>Drones and robots need compute to run. HQ provides 6, each Data Center +8.</p>';
+      case 'mines': return `<h5>Rare-earth mines: ${g.mines.refined} refined / ${g.mines.total} built</h5><p>Build Mines on rare-earth deposits. Ore only pays once refined: your HQ refines 1 mine, each Refinery 2 more (capacity now ${g.mines.capacity}). Each refined mine adds +4 credits/s. Far deposits need an Outpost nearby before you can build there.</p>`;
       case 'research': return `<h5>Research program</h5><p>Breakthrough #${g.research.level + 1}: ${Math.floor(g.research.points)}/${Math.ceil(g.research.needed)}. Rate ${g.researchRate().toFixed(2)}/s plus kills. Labs speed it up. Each breakthrough lets you pick one of ${g.draftSize} random upgrades.</p>`;
       case 'wave': return `<h5>Enemy waves</h5><p>A new wave launches every ${WAVE.interval}s from the closest Forward Outpost (or their base). Destroy outposts to push the launch point back, and facilities to weaken waves.</p>${g.earlyWarning ? '<p>Early Warning shows the next wave\'s composition.</p>' : ''}`;
       case 'timeline': return '<h5>Timeline</h5><p>How many times you have looped, and how long this one has lasted.</p>';

@@ -226,10 +226,10 @@ export const UNITS = {
 // ---------------------------------------------------------------------------
 export const BUILDINGS = {
   hq: {
-    name: 'Command HQ', w: 3, h: 3, hp: 3500, cost: 0, time: 0, sight: 320, income: 6, supply: 12,
+    name: 'Command HQ', w: 3, h: 3, hp: 3500, cost: 0, time: 0, sight: 320, income: 6, supply: 12, compute: 6, refine: 1, uplink: 480,
     trains: ['rifle', 'recon'], shape: 'hq', noBuild: true,
     weapon: { range: 220, dmg: 13, cd: 0.45, vs: VS.heavyMG, targets: 'both', type: 'bullet' },
-    desc: 'Your headquarters. Houses the time machine. If it falls, the timeline collapses.',
+    desc: 'Your headquarters. Houses the time machine. Refines the ore of one mine and relays drone control nearby. If it falls, the timeline collapses.',
   },
   barracks: {
     name: 'Barracks', w: 2, h: 2, hp: 900, cost: 150, time: 14, sight: 220, cat: 'base',
@@ -243,22 +243,38 @@ export const BUILDINGS = {
   },
   dronebay: {
     name: 'Drone Bay', w: 2, h: 2, hp: 800, cost: 180, time: 16, sight: 240, cat: 'base',
-    trains: ['recon', 'fpv', 'wasp', 'stinger', 'empdrone', 'bomber', 'harpy', 'hive'], shape: 'dronebay',
-    desc: 'Prints and launches aerial drones.',
+    trains: ['recon', 'fpv', 'wasp', 'stinger', 'empdrone', 'bomber', 'harpy', 'hive'], shape: 'dronebay', uplink: 288,
+    desc: 'Prints and launches aerial drones, and relays drone control nearby.',
   },
-  fabricator: {
-    name: 'Fabricator', w: 2, h: 2, hp: 700, cost: 200, time: 18, sight: 180, cat: 'base', income: 3.5,
-    shape: 'fabricator', costStep: 75,
-    desc: 'Automated micro-factory. Generates +3.5 credits per second. Each additional Fabricator costs 75 more.',
+  mine: {
+    name: 'Rare-Earth Mine', w: 2, h: 2, hp: 900, cost: 150, time: 15, sight: 200, cat: 'base', mine: true, shape: 'mine',
+    desc: `Extracts rare earths. Must be built on a deposit. Its ore only pays once refined: your HQ refines 1 mine, each Refinery 2 more. +4 credits/s when refined.`,
+  },
+  refinery: {
+    name: 'Refinery', w: 2, h: 2, hp: 1200, cost: 260, time: 22, sight: 180, cat: 'base', refine: 2, shape: 'refinery',
+    desc: 'Processes rare-earth ore into credits. Refines the output of 2 mines.',
+  },
+  fob: {
+    name: 'Outpost', w: 2, h: 2, hp: 1500, cost: 450, time: 30, sight: 300, cat: 'base', anywhere: true, uplink: 320, shape: 'fob',
+    weapon: { range: 200, dmg: 10, cd: 0.45, vs: VS.heavyMG, targets: 'both', type: 'bullet' },
+    desc: 'Expensive forward operating base that can be built anywhere you have scouted. Extends your build area so you can claim far-out deposits, and relays drone control nearby.',
   },
   logistics: {
     name: 'Logistics Hub', w: 2, h: 2, hp: 700, cost: 110, time: 12, sight: 180, cat: 'base', supply: 8,
     shape: 'logistics',
-    desc: 'Autonomous supply depot. +8 supply cap.',
+    desc: 'Autonomous supply depot. +8 supply for infantry and aircraft.',
+  },
+  datacenter: {
+    name: 'Data Center', w: 2, h: 2, hp: 700, cost: 130, time: 14, sight: 180, cat: 'base', compute: 8, shape: 'datacenter',
+    desc: 'Hardened server farm. +8 compute: drones and robots run on compute, infantry and aircraft on supply.',
+  },
+  uplink: {
+    name: 'Uplink Tower', w: 1, h: 1, hp: 500, cost: 150, time: 12, sight: 260, cat: 'base', uplink: 576, shape: 'uplink',
+    desc: 'Drone control relay. Drones can only operate within range of your HQ, Drone Bays, Outposts and Uplink Towers.',
   },
   lab: {
     name: 'Research Lab', w: 2, h: 2, hp: 700, cost: 250, time: 22, sight: 180, cat: 'base',
-    research: 0.7, shape: 'lab',
+    research: 0.35, shape: 'lab',
     desc: 'AI-driven research cluster. Speeds up the research program.',
   },
   radar: {
@@ -283,7 +299,7 @@ export const BUILDINGS = {
   },
   cyberops: {
     name: 'Cyber Ops Center', w: 2, h: 2, hp: 800, cost: 320, time: 24, sight: 220, cat: 'base', shape: 'cyberops',
-    research: 0.4, cyber: { waveCut: 0.12, spoof: 0.3 },
+    research: 0.2, cyber: { waveCut: 0.12, spoof: 0.3 },
     desc: 'Offensive cyber unit hacking Hegemony logistics: each center (max 2) shrinks enemy waves by 12%, and 30% of their cruise missiles get spoofed off course. Boosts research.',
   },
   foundry: {
@@ -360,8 +376,8 @@ export const BUILDINGS = {
 };
 
 export const BUILD_ORDER = [
-  'barracks', 'dronebay', 'robotics', 'airbase', 'swarmhive', 'fabricator', 'foundry', 'logistics', 'lab', 'cyberops',
-  'radar', 'repair', 'hospital', 'helipad',
+  'barracks', 'dronebay', 'robotics', 'airbase', 'swarmhive', 'mine', 'refinery', 'fob', 'foundry', 'logistics', 'datacenter',
+  'uplink', 'lab', 'cyberops', 'radar', 'repair', 'hospital', 'helipad',
   'barrier', 'sentry', 'bunker', 'bastion', 'ciws', 'interceptor', 'jammer', 'disruptor', 'battery', 'railgun',
 ];
 
@@ -463,6 +479,6 @@ export const WAVE = {
   reinforceShare: 0.55, // fraction of a wave budget sent each time
 };
 
-export const RESEARCH = { base: 0.85, first: 50, growth: 1.22, killFactor: 0.05 };
+export const RESEARCH = { base: 0.45, first: 80, growth: 1.3, killFactor: 0.025 };
 
-export const SITE_INCOME = 2.5; // credits/s per captured resource site
+export const MINE_INCOME = 4; // credits/s per refined mine

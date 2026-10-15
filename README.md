@@ -32,9 +32,9 @@ chronons, Chrono Lab unlocks and records are tracked separately per faction.
 | --- | --- | --- | --- | --- |
 | **Valdaran Defense Force** | Combined arms | Balanced; +10% research, extra reroll | Full mix of infantry, robots, drones, railguns | Artillery Barrage |
 | **Iron Guard** | Total infantry | Cheap, fast, tough infantry, +8 supply; no robots | Grenadiers, Shock Troopers, Combat Medics, Mortar Teams, Field Hospital | Mass Mobilization (free reservists) |
-| **Swarm Collective** | Drone swarms | Drones 25% cheaper, faster, half supply; weak infantry | Wasp gun drones, Stinger interceptors, Bomber drones, self-replicating Swarm Hive | Swarm Strike (free FPV wave) |
+| **Swarm Collective** | Drone swarms | Drones 25% cheaper, faster, half compute; weak infantry | Wasp gun drones, Stinger interceptors, Bomber drones, self-replicating Swarm Hive | Swarm Strike (free FPV wave) |
 | **Ghostnet Directorate** | Cyber warfare | Hack and stun the enemy; +20% research, +30% EW range | Hacker Cells (convert enemy vehicles, robots, drones), EMP drones, Cyber Ops Center (shrinks waves, spoofs missiles), Disruptor Tower | Network Breach (mass stun + capture) |
-| **Forge Union** | Industrial might | Cheap self-repairing buildings, +30% production, richer fabricators | Repair Crawlers, Juggernaut super-tanks, Arms Foundry, Bastion fortress | Overdrive (3× production) |
+| **Forge Union** | Industrial might | Cheap self-repairing buildings, +30% production, mines yield 40% more | Repair Crawlers, Juggernaut super-tanks, Arms Foundry, Bastion fortress | Overdrive (3× production) |
 | **Sky Republic** | Air power | Strong, fast aircraft, longer-range AA; weak ground troops | Attack Helicopters, Tiltrotor Gunships, Strike Fighters, AWACS (marks targets), Airbase, Rearm Pad | Air Strike (bomber carpet run) |
 
 ### Unlocking factions
@@ -62,7 +62,7 @@ faction screen says which were re-locked); chronons and Chrono Lab upgrades are 
 
 ### Each timeline (a run)
 - You start with a **Command HQ**, a couple of rifle squads and a recon drone, on a map shrouded in **fog of war**.
-- Build **barracks, drone bays, robotics bays, fabricators, logistics hubs**, and defenses: **sentry guns,
+- Build **barracks, drone bays, robotics bays, mines, refineries, outposts, logistics hubs, data centers, uplink towers**, and defenses: **sentry guns,
   bunkers, laser CIWS, interceptor arrays, EW jammers, missile batteries, railguns** and barriers.
 - Train **infantry** (rifle squads, AT teams, MANPADS, snipers, exo-troopers), **robots** (quadruped
   guard dogs, Mule UGVs, Aegis laser rovers, Titan mechs) and **drones** (recon quads, FPV kamikazes,
@@ -71,7 +71,17 @@ faction screen says which were re-locked); chronons and Chrono Lab upgrades are 
   **cruise missiles** at your buildings; intercept them or lose your base.
 - **Repair** damaged buildings for credits (3% HP per second, paid as you go), one at a time with `N`
   or base-wide with the auto-repair switch. The Forge Union repairs at half price.
-- Capture **rare-earth sites** for income and grab **supply caches** scattered in the fog.
+- **Economy:** income comes from **rare-earth deposits**. Build a **Mine** on a deposit; its ore only pays
+  (+4 credits/s) once refined: the HQ refines one mine, each **Refinery** two more. One deposit sits inside
+  your starting base; the rest are out in the field and need an **Outpost** first: expensive, but it can be
+  built anywhere you have scouted and extends your build area. Grab **supply caches** scattered in the fog.
+- **Supply and compute:** infantry and aircraft use supply (HQ 12, **Logistics Hub** +8); drones and robots
+  use compute (HQ 6, **Data Center** +8).
+- **Uplinks:** drones can only fly within range of your HQ, Drone Bays, Outposts and **Uplink Towers**;
+  build towers to push your drone coverage outwards. Aircraft and ground troops are not limited.
+- **Formations:** a group you move arrives in formation facing its direction of travel (armour in front,
+  ranged and support units behind) and travels at the pace of its slowest member. Every stopped unit stands
+  on its own point of a 16 px movement grid. Hold **Shift** to queue orders as waypoints.
 - Your **research program** periodically produces a breakthrough: pick one of three random upgrades
   rolled at **Common / Uncommon / Rare / Epic / Legendary** rarity. Legendaries include unique effects
   like *Chrono Shield*, *Hive Mind* and *Overwatch Network*.
@@ -109,7 +119,8 @@ when your HQ is in danger. Toggle it with the ♫ button or `Shift+M`.
 | --- | --- |
 | `W` `A` `S` `D` / arrows | Move along the map (hold `Shift` to move faster); screen edges, middle-drag and the minimap also work, mouse wheel zooms |
 | Left click / drag | Select (Shift adds, double-click or Ctrl+click selects all of a type on screen) |
-| Right click | Move / attack; with a production building selected: set rally point |
+| Right click | Move / attack (group moves arrive in formation); with a production building selected: set rally point |
+| `Shift` + order | Queue move / attack-move / attack orders as waypoints |
 | `Q` + click | Attack-move |
 | `E` / `R` (or `H`) | Stop / hold position |
 | `Q E R F T Y / Z X C V B N` | Command card (train units, commands, `B` recycles, `N` repairs a building) |
@@ -134,7 +145,8 @@ src/map.js              procedural map generation and flow-field pathfinding
 src/upgrades.js         research cards and rarity system
 src/meta.js             Chrono Lab trees, rewards and per-faction save profiles
 src/render.js           canvas renderer (terrain, units, effects, fog, minimap)
-src/shapes.js           vector art for every unit and structure
+src/art.js              realistic unit sprites and pseudo-3D buildings (cached), with animated parts
+src/shapes.js           palettes, icons, emblems and the drawing API used by the renderer and UI
 src/ui.js, input.js     HUD, menus, research drafts, controls
 src/audio.js            synthesized sound effects (WebAudio, no assets)
 src/music.js            generative, battle-reactive soundtrack (WebAudio step sequencer)

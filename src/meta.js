@@ -21,7 +21,7 @@ const SHARED_NODES = [
   { id: 'd_credits', branch: 'doctrine', name: 'War Chest', desc: '+150 starting credits per level.', cost: [15, 30, 50, 75] },
   { id: 'd_income', branch: 'doctrine', name: 'Industrial Mobilization', desc: '+8% income per level.', cost: [25, 45, 70, 100, 140] },
   { id: 'd_build', branch: 'doctrine', name: 'Rapid Fabrication', desc: '+8% production and construction speed per level.', cost: [25, 45, 70, 100] },
-  { id: 'd_supply', branch: 'doctrine', name: 'Logistics Doctrine', desc: '+4 supply cap per level.', cost: [20, 40, 70] },
+  { id: 'd_supply', branch: 'doctrine', name: 'Logistics Doctrine', desc: '+4 supply and +4 compute per level.', cost: [20, 40, 70] },
   { id: 'd_garrison', branch: 'doctrine', name: 'Standing Army', desc: 'Start each timeline with 2 extra Rifle Squads per level.', cost: [20, 40, 70] },
   // ---- Temporal
   { id: 't_research', branch: 'temporal', name: 'Accelerated Research', desc: '+12% research speed per level.', cost: [20, 40, 65, 95] },
@@ -238,6 +238,7 @@ export function applyMeta(profile, game) {
   m.income += 0.08 * L('d_income');
   addMod(m, 'build', 'all', 0.08 * L('d_build'));
   m.supply += 4 * L('d_supply');
+  m.compute += 4 * L('d_supply');
   m.research += 0.12 * L('t_research');
   m.abilityCd += 0.12 * L('f_ability');
   m.abilityPower += 0.15 * L('f_ability');

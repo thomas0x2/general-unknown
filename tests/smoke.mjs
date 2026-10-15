@@ -39,7 +39,7 @@ const clickBuild = async (type, dx, dy) => {
   await page.click(`[data-build="${type}"]`);
   const p = await page.evaluate(([dx, dy]) => {
     const g = window.app.game, R = window.app.renderer;
-    const s = R.toScreen(g.hq.x + dx, g.hq.y + dy);
+    const s = R.worldToPage(g.hq.x + dx, g.hq.y + dy);
     return s;
   }, [dx, dy]);
   await page.mouse.move(p.x, p.y);
@@ -50,7 +50,7 @@ await clickBuild('sentry', 60, -130);
 await clickBuild('sentry', 170, 60);
 await page.waitForTimeout(300);
 // select HQ and train a rifle squad via hotkey
-const hq = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.toScreen(g.hq.x, g.hq.y); });
+const hq = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.worldToPage(g.hq.x, g.hq.y); });
 await page.mouse.click(hq.x, hq.y);
 await page.keyboard.press('q');
 // WASD pans the camera
@@ -92,11 +92,11 @@ await page.keyboard.press('Tab');
 await page.waitForTimeout(700);
 await page.screenshot({ path: `${out}/06-research.png` });
 await page.keyboard.press('1');
-await page.keyboard.press('Escape');
+await page.evaluate(() => { window.app.ui.closeResearch(); window.app.ui.closePause(); });
 // commander ability via hotkey + targeted click
 await page.evaluate(() => { const g = window.app.game, R = window.app.renderer; g.ability.cd = 0; R.cam.x = g.hq.x + 150; R.cam.y = g.hq.y - 100; });
 await page.keyboard.press('g');
-const aim = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.toScreen(g.hq.x + 250, g.hq.y - 150); });
+const aim = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.worldToPage(g.hq.x + 250, g.hq.y - 150); });
 await page.mouse.move(aim.x, aim.y);
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${out}/06b-ability-aim.png` });

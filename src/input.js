@@ -137,7 +137,7 @@ export class Input {
   }
 
   onDown(e) {
-    this.mouse.x = e.clientX; this.mouse.y = e.clientY;
+    this.mouse.x = e.clientX - this.R.view.ox; this.mouse.y = e.clientY - this.R.view.oy;
     this.app.audio.ensure();
     if (!this.game) return;
     if (e.button === 1) { this.pan = { x: e.clientX, y: e.clientY, cx: this.R.cam.x, cy: this.R.cam.y }; e.preventDefault(); return; }
@@ -161,27 +161,27 @@ export class Input {
     if (this.mode === 'amove') {
       const t = this.pick(w.x, w.y);
       const units = this.myUnits();
-      if (t && t.team === TEAM_ENEMY) this.game.orderAttack(units, t);
-      else this.game.orderMove(units, w.x, w.y, true);
+      if (t && t.team === TEAM_ENEMY) this.game.orderAttack(units, t, e.shiftKey);
+      else this.game.orderMove(units, w.x, w.y, true, e.shiftKey);
       this.R.moveMarker = { x: w.x, y: w.y, t: 0, attack: true };
       if (!e.shiftKey) this.setMode(null);
       return;
     }
-    this.drag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
+    this.drag = { x0: this.mouse.x, y0: this.mouse.y, x1: this.mouse.x, y1: this.mouse.y, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey };
   }
 
   myUnits() { return this.game.selection.filter((e) => e.kind === 'unit' && e.team === TEAM_PLAYER); }
 
-  issueRight(wx, wy) {
+  issueRight(wx, wy, queue = false) {
     const g = this.game;
     const units = this.myUnits();
     if (units.length) {
       const t = this.pick(wx, wy);
       if (t && t.team === TEAM_ENEMY) {
-        g.orderAttack(units, t);
+        g.orderAttack(units, t, queue);
         this.R.moveMarker = { x: t.x, y: t.y, t: 0, attack: true };
       } else {
-        g.orderMove(units, wx, wy, false);
+        g.orderMove(units, wx, wy, false, queue);
         this.R.moveMarker = { x: wx, y: wy, t: 0, attack: false };
       }
       this.app.audio.play('click', 0.5);
@@ -195,7 +195,7 @@ export class Input {
   }
 
   onMove(e) {
-    this.mouse.x = e.clientX; this.mouse.y = e.clientY;
+    this.mouse.x = e.clientX - this.R.view.ox; this.mouse.y = e.clientY - this.R.view.oy;
     this.mouse.inside = true;
     if (this.pan) {
       const z = this.R.cam.zoom;
@@ -204,7 +204,7 @@ export class Input {
       this.R.clampCam();
     }
     if (this.drag) {
-      this.drag.x1 = e.clientX; this.drag.y1 = e.clientY;
+      this.drag.x1 = this.mouse.x; this.drag.y1 = this.mouse.y;
       if (Math.hypot(this.drag.x1 - this.drag.x0, this.drag.y1 - this.drag.y0) > 6) this.R.dragBox = this.drag;
     }
   }
@@ -344,8 +344,8 @@ export class Input {
       if (k.has('KeyW') || k.has('ArrowUp')) iy -= 1;
       if (k.has('KeyS') || k.has('ArrowDown')) iy += 1;
     }
-    const edge = 6;
-    if (this.mouse.inside && !this.pan && !this.drag && document.hasFocus()) {
+    const edge = 10;
+    if (this.overCanvas && !this.pan && !this.drag && document.hasFocus()) {
       if (this.mouse.x <= edge) ix -= 1;
       if (this.mouse.x >= R.view.w - edge) ix += 1;
       if (this.mouse.y <= edge) iy -= 1;

@@ -30,6 +30,16 @@ function tryPlace(g, type) {
   return false;
 }
 
+// Mines must cover a deposit tile: try the footprints that include it.
+function placeMine(g) {
+  for (const s of g.sites) {
+    if (s.mine) continue;
+    for (const [dx, dy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]])
+      if (g.canPlace('mine', s.tx + dx, s.ty + dy).ok) return g.placeBuilding('mine', s.tx + dx, s.ty + dy).ok;
+  }
+  return false;
+}
+
 const PRODUCTION = ['barracks', 'dronebay', 'robotics', 'airbase'];
 function bot(g, rng, opts) {
   const mine = (t) => g.buildings.filter((b) => b.team === TEAM_PLAYER && b.type === t);
@@ -42,8 +52,10 @@ function bot(g, rng, opts) {
   const signature = { skyrep: 'airbase', swarm: 'dronebay', forge: 'robotics' }[g.faction.id];
   if (!mine('barracks').length && g.credits >= g.costOf('barracks', true)) tryPlace(g, 'barracks');
   else if (signature && !mine(signature).length) { if (g.credits >= g.costOf(signature, true)) tryPlace(g, signature); }
-  else if (mine('fabricator').length < 2 && g.credits >= g.costOf('fabricator', true) + 20) tryPlace(g, 'fabricator');
+  else if (!mine('mine').length && g.credits >= g.costOf('mine', true)) placeMine(g);
+  else if (g.mines.total >= g.mines.capacity && mine('refinery').length < 1 && g.credits >= g.costOf('refinery', true) + 20) tryPlace(g, 'refinery');
   else if (g.supplyCap - g.supplyUsed < 3 && g.credits >= 110 && mine('logistics').length < 6) tryPlace(g, 'logistics');
+  else if (g.computeCap - g.computeUsed < 3 && g.credits >= 130 && mine('datacenter').length < 5) tryPlace(g, 'datacenter');
   else if (mine('sentry').length < 2 + g.wave.n && g.credits >= 140) tryPlace(g, 'sentry');
   for (const t of [...prod, 'hq']) for (const b of mine(t)) {
     if (!b.built || b.queue.length >= 2 || g.credits < 100) continue;
@@ -113,7 +125,8 @@ test('faction definitions are consistent', () => {
     for (const id of [...f.units, ...f.buildings]) assert.ok(g.available(id), `${fid}: ${id} not available at max progress`);
     const fresh = new Game({ profile: defaultProfile(), faction: fid, seed: 5 });
     for (const u of f.start) assert.ok(fresh.available(u), `${fid}: start unit ${u} must be unlocked from the start`);
-    assert.ok(fresh.available('barracks') && fresh.available('fabricator'), `${fid}: basic buildings available`);
+    for (const b of ['barracks', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics']) assert.ok(fresh.available(b), `${fid}: ${b} available from the start`);
+    assert.ok(!fresh.inRoster('fabricator'), 'fabricator removed');
   }
 });
 
@@ -202,12 +215,121 @@ test('buildings can be repaired for credits', () => {
   assert.ok(Math.abs(f.repairCostPerHp(f.hq) * 2 - g.repairCostPerHp(g.hq) * (g.hq.st.maxHp / f.hq.st.maxHp)) < 1e-9, 'forge discount');
 });
 
-test('fabricator cost scales with count', () => {
-  const g = new Game({ profile: defaultProfile(), seed: 77 });
-  g.credits = 5000;
-  const c1 = g.costOf('fabricator', true);
-  tryPlace(g, 'fabricator');
-  assert.ok(g.costOf('fabricator', true) > c1);
+test('rare earths need mines and refining; outposts reach far deposits', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 61 });
+  g.explored.fill(1);
+  g.credits = 99999;
+  const step = (s) => { for (let i = 0; i < 30 * s; i++) g.step(1 / 30); };
+  const inc0 = g.income;
+  assert.ok(!g.canPlace('mine', g.hq.tx + 4, g.hq.ty + 4).ok || g.siteUnder(g.hq.tx + 4, g.hq.ty + 4, 2, 2), 'mines need a deposit');
+  assert.ok(placeMine(g), 'mine on the home deposit');
+  step(20);
+  assert.ok(Math.abs(g.income - inc0 - 4) < 0.01, `HQ refines the first mine (+4/s, got ${g.income - inc0})`);
+  // a far deposit is out of the build area until an outpost is built next to it
+  const far = g.sites.filter((s) => !s.mine).sort((a, b) => Math.hypot(b.x - g.hq.x, b.y - g.hq.y) - Math.hypot(a.x - g.hq.x, a.y - g.hq.y))
+    .find((s) => g.buildings.every((b) => b.team !== 1 || Math.hypot(b.x - s.x, b.y - s.y) > 12 * TILE));
+  assert.ok(!placeMine({ ...g, sites: [far], canPlace: g.canPlace.bind(g), placeBuilding: g.placeBuilding.bind(g) }), 'far deposit needs an outpost');
+  let fob = false;
+  for (let r = 3; r < 7 && !fob; r++) for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r]]) {
+    if (g.canPlace('fob', far.tx + dx, far.ty + dy).ok) { fob = g.placeBuilding('fob', far.tx + dx, far.ty + dy).ok; break; }
+  }
+  assert.ok(fob, 'outposts can be built anywhere scouted');
+  step(35);
+  assert.ok(placeMine({ ...g, sites: [far], canPlace: g.canPlace.bind(g), placeBuilding: g.placeBuilding.bind(g) }), 'mine next to the outpost');
+  step(20);
+  assert.equal(g.mines.total, 2);
+  assert.equal(g.mines.refined, 1, 'second mine waits for a refinery');
+  assert.ok(tryPlace(g, 'refinery'));
+  step(25);
+  assert.equal(g.mines.refined, 2, 'refinery processes the second mine');
+  const unexplored = new Game({ profile: defaultProfile(), seed: 61 });
+  unexplored.credits = 9999;
+  assert.ok(!unexplored.canPlace('fob', 40, 40).ok, 'outposts need scouted ground');
+});
+
+test('drones and robots use compute; infantry uses supply', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 62 });
+  g.credits = 99999;
+  assert.equal(g.computeCap, 6);
+  assert.equal(g.supplyCap, 12);
+  assert.equal(g.computeUsed, 1, 'starting recon drone uses compute');
+  for (let i = 0; i < 5; i++) g.spawnUnitNear('recon', TEAM_PLAYER, g.hq.x + 60, g.hq.y - 60);
+  g.updateEconomy(0);
+  assert.ok(!g.hasRoomFor('recon'), 'compute full');
+  assert.ok(g.hasRoomFor('rifle'), 'supply still free');
+  tryPlace(g, 'datacenter');
+  for (let i = 0; i < 30 * 20; i++) g.step(1 / 30);
+  assert.equal(g.computeCap, 14);
+  assert.ok(g.hasRoomFor('recon'));
+});
+
+test('drones only fly within uplink range', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 63 });
+  g.explored.fill(1);
+  const d = g.units.find((u) => u.type === 'recon');
+  const far = { x: g.hq.x + 1500, y: g.hq.y - 1500 };
+  g.orderMove([d], far.x, far.y);
+  for (let i = 0; i < 30 * 25; i++) g.step(1 / 30);
+  const r = Math.hypot(d.x - g.hq.x, d.y - g.hq.y);
+  assert.ok(r <= BUILDINGS.hq.uplink + 2, `recon drone stays within HQ uplink (${r.toFixed(0)})`);
+  // an uplink tower at the edge of the base extends the range
+  g.credits = 9999;
+  let placed = false;
+  for (let k = 9; k >= 5 && !placed; k--) placed = g.placeBuilding('uplink', g.hq.tx + k, g.hq.ty - k).ok;
+  assert.ok(placed, 'uplink tower placed');
+  for (let i = 0; i < 30 * 15; i++) g.step(1 / 30);
+  g.orderMove([d], far.x, far.y);
+  for (let i = 0; i < 30 * 25; i++) g.step(1 / 30);
+  assert.ok(Math.hypot(d.x - g.hq.x, d.y - g.hq.y) > r + 150, 'flies further with the uplink tower');
+  // infantry is not limited
+  const rifle = g.units.find((u) => u.type === 'rifle');
+  g.orderMove([rifle], g.hq.x + 900, g.hq.y - 200);
+  for (let i = 0; i < 30 * 30; i++) g.step(1 / 30);
+  assert.ok(Math.hypot(rifle.x - g.hq.x, rifle.y - g.hq.y) > 700, 'infantry ignores uplink range');
+});
+
+test('stopped units stand on distinct grid points, in formation', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 64 });
+  for (const u of [...g.units]) if (u.team === TEAM_PLAYER) u.dead = true;
+  g.step(1 / 30);
+  const group = [];
+  for (let i = 0; i < 10; i++) group.push(g.spawnUnitNear('rifle', TEAM_PLAYER, g.hq.x + 120 + (i % 5) * 20, g.hq.y + 80 + Math.floor(i / 5) * 20));
+  const titan = g.spawnUnitNear('titan', TEAM_PLAYER, g.hq.x + 140, g.hq.y + 120);
+  const mortar = g.spawnUnitNear('mortar', TEAM_PLAYER, g.hq.x + 160, g.hq.y + 120);
+  const all = [...group, titan, mortar];
+  const cy = all.reduce((a, u) => a + u.y, 0) / all.length;
+  const dest = { x: g.hq.x + 520, y: cy };
+  g.orderMove(all, dest.x, dest.y);
+  for (let i = 0; i < 30 * 40; i++) g.step(1 / 30);
+  const keys = new Set();
+  for (const u of all) {
+    assert.equal(u.order.type, 'idle', `${u.type} arrived`);
+    assert.ok(Math.abs(((u.x - 8) % 16 + 16) % 16) < 0.01 && Math.abs(((u.y - 8) % 16 + 16) % 16) < 0.01, `${u.type} on a grid point (${u.x}, ${u.y})`);
+    keys.add(`${u.x},${u.y}`);
+  }
+  assert.equal(keys.size, all.length, 'every unit on its own point');
+  for (const u of all) for (const o of all) if (u !== o) assert.ok(Math.hypot(u.x - o.x, u.y - o.y) >= 15.9, 'no overlaps');
+  // direction of travel is +x: heavy armour leads, mortar trails
+  assert.ok(titan.x > mortar.x + 40, `titan in front of the mortar (${titan.x.toFixed(0)} vs ${mortar.x.toFixed(0)})`);
+  const rows = new Set(group.map((u) => Math.round(u.x / 16)));
+  assert.ok(rows.size <= 3, 'riflemen form ranks, not a blob');
+});
+
+test('shift-queued orders run one after another', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 65 });
+  const u = g.units.find((x) => x.type === 'rifle');
+  const a = { x: g.hq.x + 250, y: g.hq.y - 50 }, b = { x: g.hq.x + 250, y: g.hq.y - 300 };
+  g.orderMove([u], a.x, a.y);
+  g.orderMove([u], b.x, b.y, false, true);
+  assert.equal(u.queue.length, 1, 'second order queued');
+  let nearA = false;
+  for (let i = 0; i < 30 * 30; i++) { g.step(1 / 30); if (Math.hypot(u.x - a.x, u.y - a.y) < 20) nearA = true; }
+  assert.ok(nearA, 'visited the first waypoint');
+  assert.ok(Math.hypot(u.x - b.x, u.y - b.y) < 20, 'ended at the second waypoint');
+  g.orderMove([u], a.x, a.y);
+  g.orderMove([u], b.x, b.y, false, true);
+  g.orderStop([u]);
+  assert.equal(u.queue.length, 0, 'stop clears the queue');
 });
 
 test('every faction ability fires and resolves', () => {

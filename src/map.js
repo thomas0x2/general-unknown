@@ -82,17 +82,22 @@ export function generateMap(seed) {
   });
 
   const sites = [];
+  // one rare-earth deposit inside the starting build area, so the first mine needs no outpost
+  {
+    const a = rng.range(-Math.PI * 0.45, Math.PI * 0.05);
+    sites.push({ x: Math.round(hq.x + Math.cos(a) * 6.5), y: Math.round(hq.y + Math.sin(a) * 6.5), home: true });
+  }
   const far = (p, list, d) => list.every((q) => Math.hypot(p.x - q.x, p.y - q.y) >= d);
   // two sites reasonably close to the player, the rest spread around
   let guard = 0;
-  while (sites.length < 2 && guard++ < 500) {
+  while (sites.length < 3 && guard++ < 500) {
     const a = rng.range(0, Math.PI * 2), d = rng.range(13, 20);
     const p = { x: Math.round(hq.x + Math.cos(a) * d), y: Math.round(hq.y + Math.sin(a) * d) };
     if (p.x < 5 || p.y < 5 || p.x > W - 6 || p.y > H - 6) continue;
     if (far(p, sites, 9)) sites.push(p);
   }
   guard = 0;
-  while (sites.length < 8 && guard++ < 2000) {
+  while (sites.length < 9 && guard++ < 2000) {
     const p = { x: rng.int(6, W - 7), y: rng.int(6, H - 7) };
     if (Math.hypot(p.x - hq.x, p.y - hq.y) < 12) continue;
     if (Math.hypot(p.x - enemy.x, p.y - enemy.y) < 15) continue;

@@ -2,6 +2,7 @@
 import { TILE, MAP_W, MAP_H, TEAM_PLAYER, TEAM_ENEMY, BUILDINGS } from './data.js';
 import { T_PLAIN, T_FOREST, T_WATER, T_ROCK } from './map.js';
 import { drawUnitShape, drawBuildingShape, teamPalette } from './shapes.js';
+import { unitSprite, buildingBase, drawBuildingTop, ANIMATED_UNITS, BUILDING_MARGIN } from './art.js';
 import { BUILD_RADIUS } from './game.js';
 import { mulberry32 } from './rng.js';
 
@@ -54,18 +55,30 @@ export class Renderer {
     this.cam.zoom = 1.3;
   }
 
+  // The map only occupies the area not covered by the HUD (top bar, bottom bar, build panel),
+  // so nothing on the battlefield can hide behind the interface.
   resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = window.innerWidth, h = window.innerHeight;
-    this.view = { w, h, dpr };
+    const hud = document.getElementById('hud');
+    let top = 0, bottom = 0, right = 0;
+    if (hud && !hud.hidden) {
+      top = document.getElementById('topbar').getBoundingClientRect().bottom;
+      bottom = window.innerHeight - document.getElementById('bottombar').getBoundingClientRect().top;
+      right = document.getElementById('buildpanel').getBoundingClientRect().width;
+    }
+    const w = Math.max(100, window.innerWidth - right), h = Math.max(100, window.innerHeight - top - bottom);
+    this.view = { w, h, dpr, ox: 0, oy: top };
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
-    this.canvas.style.width = w + 'px';
-    this.canvas.style.height = h + 'px';
+    Object.assign(this.canvas.style, { width: w + 'px', height: h + 'px', left: '0px', top: top + 'px' });
     this.vignette = this.makeVignette();
   }
 
   // ------------------------------------------------------------ coordinates
+  // Page (client) coordinates <-> canvas-local coordinates.
+  pageToWorld(px, py) { return this.toWorld(px - this.view.ox, py - this.view.oy); }
+  worldToPage(wx, wy) { const s = this.toScreen(wx, wy); return { x: s.x + this.view.ox, y: s.y + this.view.oy }; }
+
   toWorld(sx, sy) {
     const { w, h } = this.view, z = this.cam.zoom;
     return { x: (sx - w / 2) / z + this.cam.x, y: (sy - h / 2) / z + this.cam.y };
@@ -77,9 +90,8 @@ export class Renderer {
   clampCam() {
     const { w, h } = this.view, z = this.cam.zoom;
     const hw = w / 2 / z, hh = h / 2 / z;
-    const padTop = 60 / z, padBottom = 190 / z;
     this.cam.x = Math.max(Math.min(hw, WORLD_W / 2), Math.min(WORLD_W - Math.min(hw, WORLD_W / 2), this.cam.x));
-    this.cam.y = Math.max(Math.min(hh - padTop, WORLD_H / 2), Math.min(WORLD_H - Math.min(hh - padBottom, WORLD_H / 2), this.cam.y));
+    this.cam.y = Math.max(Math.min(hh, WORLD_H / 2), Math.min(WORLD_H - Math.min(hh, WORLD_H / 2), this.cam.y));
   }
 
   ping(x, y, color = '#ff4d3a', life = 3) { this.pings.push({ x, y, color, t: 0, life }); }
@@ -462,6 +474,7 @@ export class Renderer {
     this.drawSites(ctx, g);
     this.drawCrates(ctx, g, onScreen);
     if (this.placing) this.drawBuildArea(ctx, g, vx0, vy0, vx1, vy1);
+    if (g.selection.some((e) => e.kind === 'unit' && g.needsUplink(e)) || (this.placing && BUILDINGS[this.placing.type].uplink)) this.drawUplinks(ctx, g);
 
     // selection rings under units
     const sel = new Set(g.selection);
@@ -477,8 +490,9 @@ export class Renderer {
       }
     }
 
-    // buildings
-    for (const b of g.buildings) {
+    // buildings, north to south so nearer (southern) structures overlap the ones behind them
+    const sortedB = g.buildings.slice().sort((a, b) => (a.ty + a.h) - (b.ty + b.h));
+    for (const b of sortedB) {
       if (b.dead || !onScreen(b, 80)) continue;
       if (b.team === TEAM_ENEMY && !b.discovered) continue;
       this.drawBuilding(ctx, b, sel.has(b));
@@ -589,10 +603,18 @@ export class Renderer {
         ctx.fillStyle = 'rgba(120,255,170,0.9)';
         ctx.beginPath(); ctx.arc(e.rally.x, e.rally.y, 4, 0, Math.PI * 2); ctx.fill();
       }
-      if (e.kind === 'unit' && (e.order.type === 'move' || e.order.type === 'amove')) {
-        ctx.strokeStyle = e.order.type === 'amove' ? 'rgba(255,120,90,0.35)' : 'rgba(120,255,170,0.3)';
-        ctx.lineWidth = 1 / z;
-        ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.order.x, e.order.y); ctx.stroke();
+      if (e.kind === 'unit' && e.team === TEAM_PLAYER) {
+        // current order, then queued waypoints
+        const legs = [e.order, ...(e.queue || [])].filter((o) => o.type === 'move' || o.type === 'amove' || o.type === 'attack');
+        let px = e.x, py = e.y;
+        for (const o of legs) {
+          const tx = o.type === 'attack' ? o.target.x : o.x, ty = o.type === 'attack' ? o.target.y : o.y;
+          ctx.strokeStyle = o.type === 'move' ? 'rgba(120,255,170,0.35)' : 'rgba(255,120,90,0.4)';
+          ctx.lineWidth = 1 / z;
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.stroke();
+          if (e.queue?.length) { ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(tx, ty, 3 / z + 1, 0, Math.PI * 2); ctx.fill(); }
+          px = tx; py = ty;
+        }
       }
     }
 
@@ -649,12 +671,20 @@ export class Renderer {
 
   drawUnit(ctx, u) {
     const P = teamPalette(u.team === TEAM_PLAYER ? 0 : 1);
+    // faint team ring keeps friend and foe readable under the camouflage
+    ctx.strokeStyle = P.glow.replace('0.35', '0.6'); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse(u.x, u.y + (u.air ? 0 : 1), u.radius + 2.5, (u.radius + 2.5) * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+    const moved = Math.abs(u.x - (u.px ?? u.x)) + Math.abs(u.y - (u.py ?? u.y)) > 0.01;
+    u.px = u.x; u.py = u.y;
+    const shape = u.def.shape;
+    const frame = !ANIMATED_UNITS.has(shape) ? 0 : u.air ? Math.floor(this.time * 24 + u.bob) & 3 : moved ? Math.floor(this.time * 9 + u.bob) & 3 : 0;
+    const spr = unitSprite(shape, P, frame);
     ctx.save();
     const bob = u.air ? Math.sin(this.time * 3 + u.bob) * 1.5 : 0;
     ctx.translate(u.x, u.y + bob);
     if (u.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; }
     ctx.rotate(u.angle);
-    drawUnitShape(ctx, u.def.shape, P, this.time + u.bob, 1);
+    ctx.drawImage(spr, -spr.ext, -spr.ext, spr.ext * 2, spr.ext * 2);
     ctx.restore();
     if (u.stunUntil > this.game.time) this.drawStun(ctx, u.x, u.y, u.radius + 4);
     if (u.hackPts > 0 && u.team === TEAM_ENEMY) this.drawBar(ctx, u.x, u.y + u.radius + 5, Math.max(16, u.radius * 2.2), u.hackPts / (u.st.maxHp * 0.6), 4);
@@ -699,7 +729,10 @@ export class Renderer {
     ctx.translate(b.tx * TILE, b.ty * TILE);
     if (!b.built) ctx.globalAlpha = 0.45 + 0.35 * b.progress;
     if (b.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 8; }
-    drawBuildingShape(ctx, b.def.shape, P, b.w, b.h, this.time + b.id, b.angle, { enemy: b.team === TEAM_ENEMY });
+    const base = buildingBase(b.def.shape, P, b.w, b.h), M = BUILDING_MARGIN;
+    ctx.drawImage(base, -M.side, -M.up, b.w * TILE + M.side * 2, b.h * TILE + M.up + M.side);
+    ctx.shadowBlur = 0;
+    drawBuildingTop(ctx, b.def.shape, P, b.w, b.h, this.time + b.id, b.angle);
     if (!b.built) {
       ctx.globalAlpha = 0.5;
       ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1;
@@ -829,29 +862,42 @@ export class Renderer {
     }
   }
 
+  // Rare-earth deposits: glinting ore outcrops; a footprint outline invites a mine.
   drawSites(ctx, g) {
     for (const s of g.sites) {
-      const i = g.tileIdx(s.x, s.y);
-      if (!g.explored[i]) continue;
-      const pm = teamPalette(0).glow.match(/\d+/g);
-      const col = s.owner === TEAM_PLAYER ? `${pm[0]},${pm[1]},${pm[2]}` : s.owner === TEAM_ENEMY ? '255,77,58' : '216,194,106';
-      ctx.fillStyle = `rgba(${col},0.08)`;
-      ctx.beginPath(); ctx.arc(s.x, s.y, 3 * TILE, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(${col},0.45)`; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
-      ctx.beginPath(); ctx.arc(s.x, s.y, 3 * TILE, this.time * 0.2, this.time * 0.2 + Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      // crystal deposit
-      ctx.fillStyle = `rgba(${col},0.9)`;
-      for (let k = 0; k < 5; k++) {
-        const a = k * 1.3, r = 6 + (k % 2) * 6;
-        const x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
-        ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 3, y); ctx.lineTo(x, y + 4); ctx.lineTo(x - 3, y); ctx.closePath(); ctx.fill();
+      if (!g.explored[g.tileIdx(s.x, s.y)] || (s.mine && !s.mine.dead)) continue;
+      const cx = s.x, cy = s.y;
+      ctx.fillStyle = 'rgba(60,46,30,0.55)';
+      ctx.beginPath(); ctx.ellipse(cx, cy + 2, 22, 16, 0, 0, Math.PI * 2); ctx.fill();
+      for (let k = 0; k < 7; k++) {
+        const a = k * 0.9 + 0.3, r = 4 + (k % 3) * 5;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.75, h = 5 + (k % 2) * 4;
+        ctx.fillStyle = '#3a3230';
+        ctx.beginPath(); ctx.moveTo(x - 4, y + 3); ctx.lineTo(x, y - h); ctx.lineTo(x + 4, y + 3); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = k % 2 ? '#c9a2ff' : '#8fd8c8';
+        ctx.globalAlpha = 0.75 + Math.sin(this.time * 2 + k) * 0.25;
+        ctx.beginPath(); ctx.moveTo(x - 1.5, y + 1); ctx.lineTo(x, y - h + 2); ctx.lineTo(x + 1.5, y + 1); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
       }
-      // capture progress
-      if (Math.abs(s.progress) > 0.01 && Math.abs(s.progress) < 1) {
-        ctx.strokeStyle = s.progress > 0 ? teamPalette(0).main : '#ff4d3a'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(s.x, s.y, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.abs(s.progress)); ctx.stroke();
+      ctx.strokeStyle = 'rgba(216,194,106,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.strokeRect(s.tx * TILE - TILE / 2, s.ty * TILE - TILE / 2, TILE * 2, TILE * 2);
+      ctx.setLineDash([]);
+      if (s.home && !s.mine) {
+        ctx.fillStyle = 'rgba(216,194,106,0.8)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('RARE EARTH', cx, cy - 22); ctx.textAlign = 'start';
       }
     }
+  }
+
+  // Uplink coverage: where drones may fly.
+  drawUplinks(ctx, g) {
+    const z = this.cam.zoom;
+    ctx.save();
+    ctx.fillStyle = 'rgba(127,209,255,0.05)';
+    ctx.strokeStyle = 'rgba(127,209,255,0.55)';
+    ctx.lineWidth = 1.5 / z; ctx.setLineDash([10 / z, 8 / z]);
+    for (const n of g.uplinks) { ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
   }
 
   drawCrates(ctx, g, onScreen) {
@@ -940,7 +986,7 @@ export class Renderer {
     const k = s / TILE;
     for (const site of g.sites) {
       if (!g.explored[g.tileIdx(site.x, site.y)]) continue;
-      mctx.fillStyle = site.owner === TEAM_PLAYER ? teamPalette(0).main : site.owner === TEAM_ENEMY ? '#ff4d3a' : '#d8c26a';
+      mctx.fillStyle = site.mine && !site.mine.dead ? teamPalette(0).main : '#d8c26a';
       mctx.beginPath(); mctx.arc(site.x * k, site.y * k, 2.5, 0, Math.PI * 2); mctx.fill();
     }
     for (const b of g.buildings) {

@@ -14,7 +14,7 @@ export const RARITIES = [
 const STATS = ['hp', 'dmg', 'range', 'rate', 'speed', 'sight', 'build', 'cost', 'regen', 'dr', 'splash', 'intercept', 'hack', 'stun'];
 
 export function createMods() {
-  const m = { income: 0, research: 0, supply: 0, bounty: 0, abilityCd: 0, abilityPower: 0, flags: {} };
+  const m = { income: 0, research: 0, supply: 0, compute: 0, bounty: 0, abilityCd: 0, abilityPower: 0, flags: {} };
   for (const s of STATS) m[s] = {};
   return m;
 }
@@ -45,7 +45,7 @@ function statCard(id, name, tag, effects, text, extra = {}) {
 
 function fmtVal([stat, , v], mult) {
   if (stat === 'regen') return `${(v * mult * 100).toFixed(1)}%`;
-  if (stat === 'supply') return `${Math.round(v * mult)}`;
+  if (stat === 'supply' || stat === 'compute') return `${Math.round(v * mult)}`;
   return pct(v * mult);
 }
 
@@ -81,7 +81,7 @@ export const CARDS = [
   statCard('intercept_algo', 'Intercept Algorithms', 'Defenses', [['intercept', 'all', 0.15]], 'Damage against missiles and drones from intercept weapons +{0}.', { req: has('ciws', 'interceptor', 'aegis') }),
   statCard('deep_learning', 'Deep Learning Cluster', 'Research', [['research', '', 0.1]], 'Research speed +{0}.'),
   statCard('salvage', 'Salvage Protocol', 'Economy', [['bounty', '', 0.04]], 'Kills refund {0} of the enemy\'s value as credits.'),
-  statCard('supply_chain', 'Supply Chain AI', 'Economy', [['supply', '', 2]], 'Supply cap +{0}.'),
+  statCard('supply_chain', 'Supply Chain AI', 'Economy', [['supply', '', 2], ['compute', '', 2]], 'Supply cap +{0}, compute cap +{1}.'),
   statCard('reactive', 'Reactive Armor', 'All Units', [['dr', 'unit', 0.03]], 'Units take {0} less damage.', { minRarity: 1 }),
   statCard('hq_fort', 'Citadel Protocol', 'HQ', [['hp', 'hq', 0.12], ['dmg', 'hq', 0.12]], 'HQ +{0} max HP and +{1} damage.'),
   statCard('overclock', 'Quantum Overclock', 'Global', [['rate', 'all', 0.03]], 'Everything +{0} fire rate.', { minRarity: 1 }),

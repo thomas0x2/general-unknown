@@ -20,7 +20,7 @@ export const FACTIONS = {
     emblem: 'titan',
     start: ['rifle', 'rifle', 'recon'],
     units: ['rifle', 'at_team', 'manpads', 'sniper', 'exo', 'dog', 'mule', 'aegis', 'titan', 'recon', 'fpv', 'harpy', 'hive'],
-    buildings: ['barracks', 'dronebay', 'robotics', 'fabricator', 'logistics', 'lab', 'radar', 'repair', 'barrier', 'sentry', 'bunker', 'ciws', 'interceptor', 'jammer', 'battery', 'railgun'],
+    buildings: ['barracks', 'dronebay', 'robotics', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics', 'lab', 'radar', 'repair', 'barrier', 'sentry', 'bunker', 'ciws', 'interceptor', 'jammer', 'battery', 'railgun'],
     arsenal: [
       node('manpads', 'MANPADS Team', 'Unlock anti-air missile infantry.', 30, ['manpads'], 'Infantry'),
       node('sniper', 'Ghost Recon', 'Unlock long-range recon snipers.', 55, ['sniper'], 'Infantry', ['manpads']),
@@ -77,7 +77,7 @@ export const FACTIONS = {
     emblem: 'shock',
     start: ['rifle', 'rifle', 'rifle', 'grenadier', 'recon'],
     units: ['rifle', 'grenadier', 'at_team', 'medic', 'manpads', 'mortar', 'shock', 'sniper', 'exo', 'recon', 'fpv'],
-    buildings: ['barracks', 'dronebay', 'fabricator', 'logistics', 'hospital', 'lab', 'radar', 'barrier', 'sentry', 'bunker', 'ciws', 'interceptor', 'battery'],
+    buildings: ['barracks', 'dronebay', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics', 'hospital', 'lab', 'radar', 'barrier', 'sentry', 'bunker', 'ciws', 'interceptor', 'battery'],
     arsenal: [
       node('medic', 'Combat Medics', 'Unlock healers that keep your squads alive.', 30, ['medic'], 'Infantry'),
       node('manpads', 'MANPADS Team', 'Unlock anti-air missile infantry.', 30, ['manpads'], 'Infantry'),
@@ -135,7 +135,7 @@ export const FACTIONS = {
     emblem: 'wasp',
     start: ['rifle', 'recon', 'wasp', 'wasp', 'wasp'],
     units: ['rifle', 'manpads', 'recon', 'fpv', 'wasp', 'stinger', 'bomber', 'harpy', 'hive'],
-    buildings: ['barracks', 'dronebay', 'swarmhive', 'fabricator', 'logistics', 'lab', 'radar', 'helipad', 'barrier', 'sentry', 'ciws', 'jammer', 'interceptor'],
+    buildings: ['barracks', 'dronebay', 'swarmhive', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics', 'lab', 'radar', 'helipad', 'barrier', 'sentry', 'ciws', 'jammer', 'interceptor'],
     arsenal: [
       node('stinger', 'Stinger Interceptors', 'Unlock kamikaze anti-air drones.', 30, ['stinger'], 'Drones'),
       node('bomber', 'Bomber Drones', 'Unlock heavy bomb-dropping drones.', 80, ['bomber'], 'Drones'),
@@ -154,6 +154,7 @@ export const FACTIONS = {
       const m = g.mods;
       addMod(m, 'cost', 'drone', 0.25);
       addMod(m, 'build', 'drone', 0.3);
+      m.compute += 4;
       addMod(m, 'cost', 'infantry', -0.15);
       addMod(m, 'hp', 'infantry', -0.1);
     },
@@ -189,7 +190,7 @@ export const FACTIONS = {
     emblem: 'empdrone',
     start: ['rifle', 'rifle', 'hacker', 'recon'],
     units: ['rifle', 'at_team', 'hacker', 'sniper', 'recon', 'empdrone', 'dog', 'mule', 'aegis'],
-    buildings: ['barracks', 'dronebay', 'robotics', 'fabricator', 'logistics', 'cyberops', 'lab', 'radar', 'barrier', 'sentry', 'jammer', 'disruptor', 'ciws', 'interceptor'],
+    buildings: ['barracks', 'dronebay', 'robotics', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics', 'cyberops', 'lab', 'radar', 'barrier', 'sentry', 'jammer', 'disruptor', 'ciws', 'interceptor'],
     arsenal: [
       node('empdrone', 'EMP Drones', 'Unlock drones that stun everything in a wide radius.', 40, ['empdrone'], 'Cyber'),
       node('cyberops', 'Cyber Ops Center', 'Unlock the building that shrinks enemy waves and spoofs their missiles.', 90, ['cyberops'], 'Cyber'),
@@ -229,7 +230,7 @@ export const FACTIONS = {
     doctrine: 'Industrial Might',
     motto: 'Outbuild. Outlast.',
     desc: 'A heavy-industry powerhouse with fully automated factories. Its soldiers are few, but its assembly lines never stop.',
-    playstyle: ['Buildings 20% cheaper with +15% HP, self-repair, and half-price repairs', 'Production and construction +30%, Fabricators +40% income', 'Unique: Repair Crawlers, Juggernauts, Arms Foundry, Bastion', 'Ability: Overdrive'],
+    playstyle: ['Buildings 20% cheaper with +15% HP, self-repair, and half-price repairs', 'Production and construction +30%, mines yield 40% more', 'Unique: Repair Crawlers, Juggernauts, Arms Foundry, Bastion', 'Ability: Overdrive'],
     difficulty: 1,
     unlock: {
       hint: 'The Commonwealth\'s industrialists back only commanders who build on a grand scale.',
@@ -241,8 +242,8 @@ export const FACTIONS = {
     emblem: 'juggernaut',
     start: ['rifle', 'dog', 'dog', 'recon'],
     units: ['rifle', 'at_team', 'recon', 'fpv', 'dog', 'mule', 'crawler', 'aegis', 'titan', 'juggernaut'],
-    buildings: ['barracks', 'robotics', 'dronebay', 'fabricator', 'foundry', 'logistics', 'lab', 'repair', 'barrier', 'sentry', 'bunker', 'bastion', 'ciws', 'interceptor', 'battery', 'railgun'],
-    incomeBonus: { fabricator: 0.4 },
+    buildings: ['barracks', 'robotics', 'dronebay', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'foundry', 'logistics', 'lab', 'repair', 'barrier', 'sentry', 'bunker', 'bastion', 'ciws', 'interceptor', 'battery', 'railgun'],
+    incomeBonus: { mine: 0.4 },
     arsenal: [
       node('crawler', 'Repair Crawler', 'Unlock robots that repair robots and buildings.', 40, ['crawler'], 'Robots'),
       node('aegis', 'Aegis Rover', 'Unlock mobile laser point-defense rovers.', 100, ['aegis'], 'Robots'),
@@ -301,7 +302,7 @@ export const FACTIONS = {
     emblem: 'fighter',
     start: ['rifle', 'rifle', 'manpads', 'recon'],
     units: ['rifle', 'at_team', 'manpads', 'recon', 'harpy', 'helo', 'tiltrotor', 'fighter', 'awacs'],
-    buildings: ['barracks', 'dronebay', 'airbase', 'helipad', 'fabricator', 'logistics', 'lab', 'radar', 'barrier', 'sentry', 'ciws', 'interceptor', 'battery'],
+    buildings: ['barracks', 'dronebay', 'airbase', 'helipad', 'mine', 'refinery', 'fob', 'datacenter', 'uplink', 'logistics', 'lab', 'radar', 'barrier', 'sentry', 'ciws', 'interceptor', 'battery'],
     arsenal: [
       node('helipad', 'Rearm Pad', 'Unlock pads that repair aircraft in the field.', 35, ['helipad'], 'Aviation'),
       node('fighter', 'Strike Fighters', 'Unlock fast multirole jets.', 80, ['fighter'], 'Aviation'),

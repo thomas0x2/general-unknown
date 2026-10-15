@@ -80,6 +80,8 @@ class App {
     this.overAt = null;
     this.setSpeed(1);
     this.ui.enterGame();
+    this.renderer.resize(); // the HUD is visible now: fit the map between its panels
+    this.renderer.clampCam();
     if (this.game.research.ready > 0) setTimeout(() => this.ui.openResearch(), 600);
   }
 

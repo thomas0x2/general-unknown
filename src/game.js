@@ -1,7 +1,7 @@
 // Core simulation: entities, orders, combat, economy, fog of war, enemy AI.
 import {
   TILE, MAP_W, MAP_H, TEAM_PLAYER, TEAM_ENEMY, UNITS, BUILDINGS, ENEMY_UNITS, ENEMY_BUILDINGS,
-  CRUISE_MISSILE, WAVE, RESEARCH, SITE_INCOME, VS,
+  CRUISE_MISSILE, WAVE, RESEARCH, MINE_INCOME, VS,
 } from './data.js';
 import { generateMap, Pathing } from './map.js';
 import { mulberry32, randomSeed } from './rng.js';
@@ -10,6 +10,8 @@ import { applyMeta, unlockedSet, decodeMemory } from './meta.js';
 import { FACTIONS, lockMap } from './factions.js';
 
 export const BUILD_RADIUS = 9; // tiles from an existing building
+export const GRID = 16; // movement grid spacing (px): stopped units stand on distinct grid points
+const GRID_W = (MAP_W * TILE) / GRID, GRID_H = (MAP_H * TILE) / GRID;
 export const REPAIR_RATE = 0.03; // fraction of max HP restored per second while repairing
 const REPAIR_COST = 0.5; // a full repair from zero costs this fraction of the building's price
 const FOG_INTERVAL = 0.2;
@@ -104,9 +106,12 @@ export class Game {
     this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0, infantry: 0, drones: 0, repaired: 0 };
     this.unlockWatch = []; // locked factions to announce mid-run: { id, name, stat, need, have }
     this.throttles = new Map();
-    this.income = 0; this.supplyUsed = 0; this.supplyCap = 0;
+    this.income = 0; this.supplyUsed = 0; this.supplyCap = 0; this.computeUsed = 0; this.computeCap = 0;
+    this.mines = { total: 0, refined: 0, capacity: 0 };
+    this.uplinks = [];
+    this.slotMap = [new Map(), new Map()]; // ground, air
 
-    this.sites = this.map.sites.map((p) => ({ x: (p.x + 0.5) * TILE, y: (p.y + 0.5) * TILE, progress: 0, owner: -1 }));
+    this.sites = this.map.sites.map((p) => ({ tx: p.x, ty: p.y, x: (p.x + 0.5) * TILE, y: (p.y + 0.5) * TILE, home: !!p.home, mine: null }));
     this.crates = this.map.crates.map((p) => ({ x: (p.x + 0.5) * TILE, y: (p.y + 0.5) * TILE, taken: false }));
 
     this.setupPlayer();
@@ -169,7 +174,7 @@ export class Game {
   spawnGarrison(type, x, y, spread) {
     const a = this.rng() * Math.PI * 2, r = this.rng() * spread;
     const u = this.spawnUnitNear(type, TEAM_ENEMY, x + Math.cos(a) * r, y + Math.sin(a) * r);
-    if (u) { u.home = { x: u.x, y: u.y }; u.garrison = true; }
+    if (u) { const a = this.claimNear(u, u.x, u.y); u.home = a ? { x: a.x, y: a.y } : { x: u.x, y: u.y }; u.garrison = true; }
     return u;
   }
 
@@ -256,6 +261,33 @@ export class Game {
     const list = b.type === 'hq' ? this.faction.hqTrains || b.def.trains : b.def.trains;
     return (list || []).filter((t) => this.roster.has(t));
   }
+  // ----- uplink coverage: player drones only operate within range of a control relay
+  needsUplink(u) { return u.team === TEAM_PLAYER && u.def.cls === 'drone' && !u.satLink; }
+
+  // Nearest point inside uplink coverage (or the point itself when already covered).
+  uplinkClamp(x, y) {
+    let best = null, bd = Infinity;
+    for (const n of this.uplinks) {
+      const d = Math.hypot(x - n.x, y - n.y);
+      if (d <= n.r) return { x, y, inside: true };
+      const over = d - n.r;
+      if (over < bd) {
+        bd = over;
+        const k = (n.r - 6) / d;
+        best = { x: n.x + (x - n.x) * k, y: n.y + (y - n.y) * k, inside: false };
+      }
+    }
+    return best || { x, y, inside: true };
+  }
+
+  // Drones and robots run on compute (Data Centers); infantry and aircraft on supply (Logistics Hubs).
+  usesCompute(type) { const c = UNITS[type]?.cls; return c === 'drone' || c === 'robot'; }
+
+  hasRoomFor(type) {
+    const need = this.supplyOf(type);
+    return this.usesCompute(type) ? this.computeUsed + need <= this.computeCap + 1e-6 : this.supplyUsed + need <= this.supplyCap + 1e-6;
+  }
+
   supplyOf(type) {
     const def = UNITS[type];
     return def.supply * (this.faction.supplyMult?.[def.cls] ?? 1);
@@ -270,7 +302,7 @@ export class Game {
       air: !!def.air, armor: def.armor, radius: def.radius, dead: false,
       order: { type: 'idle' }, target: null, cd: this.rng() * 0.5, scanT: this.rng() * 0.3,
       losT: 0, direct: false, wave: this.wave.n, home: null, slowUntil: 0, slowFactor: 1, flash: 0,
-      stuckT: 0, lastD: Infinity, spawnT: def.spawner ? 2 : 0, children: 0, bob: this.rng() * 10,
+      stuckT: 0, lastD: Infinity, spawnT: def.spawner ? 2 : 0, children: 0, bob: this.rng() * 10, queue: [], cells: null, anchor: null,
     };
     u.tags = this.tagsFor('unit', type, def, team);
     u.st = this.computeStats(u);
@@ -304,9 +336,13 @@ export class Game {
     b.hp = built ? b.st.maxHp : b.st.maxHp * 0.08;
     this.buildings.push(b);
     this.path.setBlock(b, true);
-    // push units out of the footprint
+    // push units out of the footprint (and off grid points it now covers)
     for (const u of this.units) {
       if (u.air || u.dead) continue;
+      if (u.anchor && u.anchor.x >= tx * TILE && u.anchor.x < (tx + def.w) * TILE && u.anchor.y >= ty * TILE && u.anchor.y < (ty + def.h) * TILE) {
+        this.releaseSlot(u);
+        if (u.order.type === 'idle' || u.order.type === 'hold') u.relocate = true;
+      }
       const utx = Math.floor(u.x / TILE), uty = Math.floor(u.y / TILE);
       if (utx >= tx && utx < tx + def.w && uty >= ty && uty < ty + def.h) {
         const t = this.path.nearestWalkable(utx, uty, 6);
@@ -380,23 +416,36 @@ export class Game {
   }
 
   updateEconomy(dt) {
-    let inc = 0, cap = 0, used = 0, prod = 0, cyber = 0;
+    let inc = 0, cap = 0, ccap = 0, used = 0, cused = 0, prod = 0, cyber = 0, mines = 0, refine = 0;
     const ib = this.faction.incomeBonus || {};
+    const links = [];
     for (const b of this.buildings) {
       if (b.team !== TEAM_PLAYER || !b.built || b.dead) continue;
       inc += (b.def.income || 0) * (1 + (ib[b.type] || 0));
       cap += b.def.supply || 0;
+      ccap += b.def.compute || 0;
       prod += b.def.prodBonus || 0;
+      refine += b.def.refine || 0;
+      if (b.def.mine) mines++;
       if (b.def.cyber) cyber++;
+      if (b.def.uplink) links.push({ x: b.x, y: b.y, r: b.def.uplink });
     }
+    this.uplinks = links;
     this.cyberCenters = Math.min(2, cyber);
     this.prodSpeed = (1 + prod) * (this.overdrive() ? 3 : 1);
-    const sites = this.sites.filter((s) => s.owner === TEAM_PLAYER).length;
-    inc += sites * SITE_INCOME;
-    for (const u of this.units) if (u.team === TEAM_PLAYER && !u.dead && !u.spawned) used += this.supplyOf(u.type);
+    // rare earths only pay once refined
+    const refined = Math.min(mines, refine);
+    this.mines = { total: mines, refined, capacity: refine };
+    inc += refined * MINE_INCOME * (1 + (ib.mine || 0));
+    for (const u of this.units) {
+      if (u.team !== TEAM_PLAYER || u.dead || u.spawned) continue;
+      if (this.usesCompute(u.type)) cused += this.supplyOf(u.type); else used += this.supplyOf(u.type);
+    }
     this.income = inc * (1 + this.mods.income);
     this.supplyCap = cap + this.mods.supply;
     this.supplyUsed = Math.round(used * 10) / 10;
+    this.computeCap = ccap + this.mods.compute;
+    this.computeUsed = Math.round(cused * 10) / 10;
     const gain = this.income * dt;
     this.credits += gain;
     this.stats.earned += gain;
@@ -512,6 +561,7 @@ export class Game {
         for (let i = 0; i < n; i++) {
           const u = this.spawnUnit('fpv', TEAM_PLAYER, hq.x + (this.rng() - 0.5) * 60, hq.y + (this.rng() - 0.5) * 60);
           u.spawned = true;
+          u.satLink = true; // satellite-guided: not limited by uplink range
           u.order = { type: 'amove', x: x + (this.rng() - 0.5) * A.radius, y: y + (this.rng() - 0.5) * A.radius };
           u.home = { x: u.order.x, y: u.order.y };
         }
@@ -675,9 +725,11 @@ export class Game {
     }
 
     if (o.type === 'amove') { this.followOrder(u, dt); return; }
-    if (o.type === 'idle' && u.home && dist(u, u.home) > 24) {
-      this.moveTo(u, u.home.x, u.home.y, dt, null);
-      return;
+    if (u.relocate) { u.relocate = false; const a = this.claimNear(u, u.x, u.y); if (a) u.home = { x: a.x, y: a.y }; }
+    if ((o.type === 'idle' || o.type === 'hold') && u.home) {
+      const d = dist(u, u.home);
+      if (d > (u.anchor ? 0.5 : 24)) { this.moveTo(u, u.home.x, u.home.y, dt, null); return; }
+      if (u.anchor && d > 0) { u.x = u.home.x; u.y = u.home.y; }
     }
     if (u.air) u.angle += dt * 0.6; // hovering drift
   }
@@ -697,15 +749,73 @@ export class Game {
     this.sfx('launch', u.x, u.y);
   }
 
+  // ----- movement grid: every stopped unit stands on its own grid point (big units reserve 3×3)
+  slotSize(u) { return u.radius <= 9 ? 0 : u.radius <= 17 ? 1 : 2; }
+
+  cellFree(u, cx, cy) {
+    const k = this.slotSize(u), map = this.slotMap[u.air ? 1 : 0];
+    for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) {
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return false;
+      const o = map.get(y * GRID_W + x);
+      if (o && o !== u && !o.dead && o.cells) return false;
+      if (!u.air && !this.path.walkableAt((x + 0.5) * GRID, (y + 0.5) * GRID)) return false;
+    }
+    return true;
+  }
+
+  // Reserve the free grid point nearest to (x, y) for u. Returns its centre, or null if none nearby.
+  claimNear(u, x, y, maxR = 10) {
+    const c0x = Math.floor(x / GRID), c0y = Math.floor(y / GRID);
+    for (let r = 0; r <= maxR; r++) {
+      let best = null, bd = Infinity;
+      for (let cy = c0y - r; cy <= c0y + r; cy++)
+        for (let cx = c0x - r; cx <= c0x + r; cx++) {
+          if (Math.max(Math.abs(cx - c0x), Math.abs(cy - c0y)) !== r) continue;
+          const d = ((cx + 0.5) * GRID - x) ** 2 + ((cy + 0.5) * GRID - y) ** 2;
+          if (d < bd && this.cellFree(u, cx, cy)) { bd = d; best = [cx, cy]; }
+        }
+      if (best) return this.reserveSlot(u, best[0], best[1]);
+    }
+    return null;
+  }
+
+  reserveSlot(u, cx, cy) {
+    this.releaseSlot(u);
+    const k = this.slotSize(u), map = this.slotMap[u.air ? 1 : 0];
+    u.cells = [];
+    for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) {
+      const key = (cy + dy) * GRID_W + cx + dx;
+      map.set(key, u);
+      u.cells.push(key);
+    }
+    u.anchor = { x: (cx + 0.5) * GRID, y: (cy + 0.5) * GRID };
+    return u.anchor;
+  }
+
+  releaseSlot(u) {
+    if (u.cells) {
+      const map = this.slotMap[u.air ? 1 : 0];
+      for (const key of u.cells) if (map.get(key) === u) map.delete(key);
+    }
+    u.cells = null;
+    u.anchor = null;
+  }
+
+  // Order finished: start the next queued order, or stand on a grid point.
   setIdle(u) {
+    if (u.queue?.length) { this.startOrder(u, u.queue.shift()); return; }
     u.order = { type: 'idle' };
-    if (!u.garrison) u.home = { x: u.x, y: u.y };
+    if (u.garrison && u.home) return;
+    const keep = u.anchor && u.cells && Math.hypot(u.anchor.x - u.x, u.anchor.y - u.y) < 40;
+    const a = keep ? u.anchor : this.claimNear(u, u.x, u.y);
+    u.home = a ? { x: a.x, y: a.y } : { x: u.x, y: u.y };
   }
 
   followOrder(u, dt) {
     const o = u.order;
     const d = Math.hypot(o.x - u.x, o.y - u.y);
-    if (d < 6) { this.setIdle(u); return; }
+    if (d < 1.5) { u.x = o.x; u.y = o.y; this.setIdle(u); return; }
     // stuck detection
     u.stuckT += dt;
     if (u.stuckT > 1) {
@@ -737,6 +847,7 @@ export class Game {
   // Steering: direct when the straight line is clear, otherwise follow a flow field.
   moveTo(u, tx, ty, dt, goalTile, goals) {
     let sp = u.st.speed * (u.slowUntil > this.time ? u.slowFactor : 1);
+    if (u.order.groupSpeed && !u.target && (u.order.type === 'move' || u.order.type === 'amove')) sp = Math.min(sp, u.order.groupSpeed);
     let dx = tx - u.x, dy = ty - u.y;
     const d = Math.hypot(dx, dy);
     if (d < 1) return;
@@ -782,7 +893,17 @@ export class Game {
     else u.losT = 0;
     u.angle = lerpAngle(u.angle, Math.atan2(dy, dx), dt * 8);
     u.moving = true;
+    if (this.needsUplink(u)) {
+      const c = this.uplinkClamp(u.x, u.y);
+      if (!c.inside) {
+        u.x = c.x; u.y = c.y;
+        if (u.target && !this.uplinkClamp(u.target.x, u.target.y).inside) u.target = null;
+        this.notify('Drones out of uplink range: build Uplink Towers or Outposts to fly further', 'warn', null, 'uplink', 20);
+      }
+    }
   }
+
+  planted(u) { return !!u.anchor && (u.order.type === 'idle' || u.order.type === 'hold') && !u.target && Math.abs(u.x - u.anchor.x) + Math.abs(u.y - u.anchor.y) < 1; }
 
   separate() {
     for (const u of this.units) {
@@ -793,10 +914,12 @@ export class Game {
         const d = Math.hypot(dx, dy) || 0.01;
         const min = (u.radius + o.radius) * (u.air ? 0.9 : 0.8);
         if (d >= min) return;
-        const push = (min - d) * 0.5;
+        const pu = this.planted(u), po = this.planted(o);
+        if (pu && po) return;
+        const push = (min - d) * (pu || po ? 1 : 0.5);
         const px = (dx / d) * push, py = (dy / d) * push;
-        if (u.air || this.path.walkableAt(u.x - px, u.y - py)) { u.x -= px; u.y -= py; }
-        if (o.air || this.path.walkableAt(o.x + px, o.y + py)) { o.x += px; o.y += py; }
+        if (!pu && (u.air || this.path.walkableAt(u.x - px, u.y - py))) { u.x -= px; u.y -= py; }
+        if (!po && (o.air || this.path.walkableAt(o.x + px, o.y + py))) { o.x += px; o.y += py; }
       });
     }
   }
@@ -1011,6 +1134,7 @@ export class Game {
     if (e.parent && !e.parent.dead) e.parent.children = Math.max(0, e.parent.children - 1);
 
     if (e.kind === 'unit') {
+      this.releaseSlot(e);
       if (e.team === TEAM_ENEMY) {
         this.stats.kills++;
         this.addResearch(e.def.cost * RESEARCH.killFactor * (1 + this.mods.research));
@@ -1024,6 +1148,7 @@ export class Game {
     }
     // building
     this.path.setBlock(e, false);
+    if (e.site) e.site.mine = null;
     if (e.team === TEAM_PLAYER) {
       if (e.type === 'hq') {
         this.over = { victory: false };
@@ -1087,9 +1212,10 @@ export class Game {
     // production
     if (b.queue.length) {
       const q = b.queue[0];
-      if (this.supplyUsed + this.supplyOf(q.type) > this.supplyCap + 1e-6) {
+      if (!this.hasRoomFor(q.type)) {
         q.blocked = true;
-        this.notify('Supply cap reached — build a Logistics Hub', 'warn', null, 'supply', 12);
+        if (this.usesCompute(q.type)) this.notify('Compute cap reached — build a Data Center', 'warn', null, 'compute', 12);
+        else this.notify('Supply cap reached — build a Logistics Hub', 'warn', null, 'supply', 12);
       } else {
         q.blocked = false;
         q.t += dt * this.prodSpeed;
@@ -1318,24 +1444,6 @@ export class Game {
     if (this.siteT > 0) return;
     const step = 0.25;
     this.siteT = step;
-    for (const s of this.sites) {
-      let p = 0, e = 0;
-      this.hash.query(s.x, s.y, 3 * TILE, (o) => {
-        if (o.kind !== 'unit' || o.dead || o.air || !o.def.weapon) return;
-        if (Math.hypot(o.x - s.x, o.y - s.y) > 3 * TILE) return;
-        if (o.team === TEAM_PLAYER) p++; else e++;
-      });
-      const before = s.owner;
-      if (p && !e) s.progress = Math.min(1, s.progress + step / 6);
-      else if (e && !p) s.progress = Math.max(-1, s.progress - step / 6);
-      if (s.progress >= 1) s.owner = TEAM_PLAYER;
-      else if (s.progress <= -1) s.owner = TEAM_ENEMY;
-      else if ((s.owner === TEAM_PLAYER && s.progress <= 0) || (s.owner === TEAM_ENEMY && s.progress >= 0)) s.owner = -1;
-      if (before !== s.owner) {
-        if (s.owner === TEAM_PLAYER) this.notify(`Rare-earth site secured (+${SITE_INCOME}/s)`, 'good', s);
-        else if (before === TEAM_PLAYER) this.notify('Rare-earth site lost', 'warn', s);
-      }
-    }
     for (const c of this.crates) {
       if (c.taken) continue;
       let found = null;
@@ -1561,7 +1669,7 @@ export class Game {
     if (this.throttle('reorder', 3)) {
       for (const u of this.units) {
         if (u.team !== TEAM_ENEMY || u.garrison || u.dead) continue;
-        if (u.order.type === 'idle' && !u.target) u.order = { type: 'amove', x: this.hq.x, y: this.hq.y, goals: this.hqGoals, goalTile: 'hq' };
+        if (u.order.type === 'idle' && !u.target) { this.releaseSlot(u); u.order = { type: 'amove', x: this.hq.x, y: this.hq.y, goals: this.hqGoals, goalTile: 'hq' }; }
       }
     }
   }
@@ -1584,57 +1692,117 @@ export class Game {
   }
 
   // ------------------------------------------------------------- commands
-  orderMove(units, x, y, attack = false) {
-    const list = units.filter((u) => u.kind === 'unit' && u.team === TEAM_PLAYER && !u.dead);
-    if (!list.length) return;
-    const ground = list.filter((u) => !u.air), air = list.filter((u) => u.air);
-    const place = (group, spacing) => {
-      const n = group.length;
-      const cols = Math.ceil(Math.sqrt(n));
-      // stable assignment: sort by angle around centroid
-      let cx = 0, cy = 0;
-      for (const u of group) { cx += u.x; cy += u.y; }
-      cx /= n; cy /= n;
-      group.sort((a, b) => (a.x - cx + (a.y - cy) * 0.3) - (b.x - cx + (b.y - cy) * 0.3));
-      let gt = Math.floor(x / TILE), gtt = Math.floor(y / TILE);
-      if (group[0] && !group[0].air) {
-        const w = this.path.nearestWalkable(gt, gtt, 15);
-        if (w) { gt = w.x; gtt = w.y; }
-      }
-      const goalTile = gtt * MAP_W + gt;
-      group.forEach((u, i) => {
-        const r = Math.floor(i / cols), c = i % cols;
-        let px = x + (c - (cols - 1) / 2) * spacing, py = y + (r - (Math.ceil(n / cols) - 1) / 2) * spacing;
-        if (!u.air && !this.path.walkableAt(px, py)) {
-          const w = this.path.nearestWalkable(Math.floor(px / TILE), Math.floor(py / TILE), 10);
-          if (w) { px = (w.x + 0.5) * TILE; py = (w.y + 0.5) * TILE; }
-        }
-        u.order = { type: attack ? 'amove' : 'move', x: px, y: py, goalTile: u.air ? null : goalTile, goals: u.air ? null : [goalTile] };
-        u.home = { x: px, y: py };
-        u.stuckT = 0; u.lastD = Infinity; u.losT = 0;
-        if (!attack) u.target = null;
-      });
-    };
-    if (ground.length) place(ground, 24);
-    if (air.length) place(air, 26);
+  // ----- formations: front rank heavies, then line infantry, then ranged, then support
+  formationRank(u) {
+    const w = u.def.weapon;
+    if (!w) return 3;
+    if (u.armor === 'armor' || u.def.shape === 'squad_shock' || (u.radius >= 12 && w.range <= 260)) return 0;
+    if (w.range >= 280 || w.type === 'shell' && u.def.cls === 'infantry') return 3;
+    if (w.range >= 200) return 2;
+    return 1;
   }
 
-  orderAttack(units, target) {
+  // Formation points for a group heading to (x, y): rows perpendicular to the direction of travel.
+  formation(group, x, y) {
+    const n = group.length;
+    let cx = 0, cy = 0;
+    for (const u of group) { cx += u.x; cy += u.y; }
+    cx /= n; cy /= n;
+    let ang = Math.atan2(y - cy, x - cx);
+    if (Math.hypot(x - cx, y - cy) < 20) ang = group[0].angle || 0;
+    const fx = Math.cos(ang), fy = Math.sin(ang), rx = -fy, ry = fx;
+    const cols = Math.max(1, Math.min(10, Math.ceil(Math.sqrt(n * 2))));
+    const lateral = (u) => (u.x - cx) * rx + (u.y - cy) * ry;
+    const sorted = [...group].sort((a, b) => this.formationRank(a) - this.formationRank(b) || lateral(a) - lateral(b));
+    const out = new Map();
+    let back = 0;
+    for (let i = 0; i < sorted.length; i += cols) {
+      const row = sorted.slice(i, i + cols).sort((a, b) => lateral(a) - lateral(b));
+      const sp = Math.max(...row.map((u) => Math.max(GRID * 2, u.radius * 2 + 12)));
+      row.forEach((u, k) => {
+        const off = (k - (row.length - 1) / 2) * sp;
+        out.set(u, { x: x - fx * back + rx * off, y: y - fy * back + ry * off });
+      });
+      back += sp;
+    }
+    return out;
+  }
+
+  // queue = true appends the order (Shift); otherwise it replaces the current one.
+  orderMove(units, x, y, attack = false, queue = false) {
+    const list = units.filter((u) => u.kind === 'unit' && u.team === TEAM_PLAYER && !u.dead);
+    if (!list.length) return;
+    for (const group of [list.filter((u) => !u.air), list.filter((u) => u.air)]) {
+      if (!group.length) continue;
+      // move together at the pace of the slowest unit when the group is already together
+      let gx = 0, gy = 0;
+      for (const u of group) { gx += u.x; gy += u.y; }
+      gx /= group.length; gy /= group.length;
+      const together = group.length > 1 && group.every((u) => Math.hypot(u.x - gx, u.y - gy) < 420);
+      const groupSpeed = together ? Math.min(...group.map((u) => u.st.speed)) : 0;
+      const pts = this.formation(group, x, y);
+      for (const u of group) {
+        const p = pts.get(u);
+        const o = { type: attack ? 'amove' : 'move', x: p.x, y: p.y, groupSpeed };
+        if (queue && (u.order.type !== 'idle' || u.queue.length)) u.queue.push(o);
+        else { u.queue.length = 0; this.startOrder(u, o); }
+      }
+    }
+  }
+
+  startOrder(u, o) {
+    this.releaseSlot(u);
+    u.stuckT = 0; u.lastD = Infinity; u.losT = 0;
+    if (o.type === 'attack') {
+      if (!o.target || o.target.dead) { this.setIdle(u); return; }
+      u.order = o;
+      u.target = o.target;
+      return;
+    }
+    if (this.needsUplink(u)) {
+      const c = this.uplinkClamp(o.x, o.y);
+      if (!c.inside) { o.x = c.x; o.y = c.y; this.notify('Drones can only fly within uplink range: build Uplink Towers or Outposts', 'warn', null, 'uplink', 8); }
+    }
+    // reserve the destination grid point up front so the formation lands on distinct points
+    const a = this.claimNear(u, o.x, o.y);
+    if (a) { o.x = a.x; o.y = a.y; }
+    if (!u.air) {
+      const gt = this.tileIdx(o.x, o.y);
+      o.goalTile = gt; o.goals = [gt];
+    }
+    u.order = o;
+    u.home = { x: o.x, y: o.y };
+    if (o.type === 'move') u.target = null;
+  }
+
+  orderAttack(units, target, queue = false) {
     for (const u of units) {
       if (u.kind !== 'unit' || u.team !== TEAM_PLAYER || u.dead) continue;
       if (!u.def.weapon || !this.canHit(u.def.weapon, target)) {
         // can't hit it: move next to it instead
-        this.orderMove([u], target.x, target.y, true);
+        this.orderMove([u], target.x, target.y, true, queue);
         continue;
       }
-      u.order = { type: 'attack', target };
-      u.target = target;
-      u.losT = 0;
+      const o = { type: 'attack', target };
+      if (queue && (u.order.type !== 'idle' || u.queue.length)) u.queue.push(o);
+      else { u.queue.length = 0; this.startOrder(u, o); }
     }
   }
 
-  orderStop(units) { for (const u of units) if (u.kind === 'unit' && u.team === TEAM_PLAYER) { this.setIdle(u); u.target = null; } }
-  orderHold(units) { for (const u of units) if (u.kind === 'unit' && u.team === TEAM_PLAYER) { u.order = { type: 'hold' }; u.home = { x: u.x, y: u.y }; } }
+  orderStop(units) {
+    for (const u of units) if (u.kind === 'unit' && u.team === TEAM_PLAYER) { u.queue.length = 0; u.target = null; this.releaseSlot(u); this.setIdle(u); }
+  }
+
+  orderHold(units) {
+    for (const u of units) {
+      if (u.kind !== 'unit' || u.team !== TEAM_PLAYER) continue;
+      u.queue.length = 0;
+      this.releaseSlot(u);
+      const a = this.claimNear(u, u.x, u.y);
+      u.order = { type: 'hold' };
+      u.home = a || { x: u.x, y: u.y };
+    }
+  }
 
   canPlace(type, tx, ty) {
     const def = BUILDINGS[type];
@@ -1645,13 +1813,23 @@ export class Game {
         if (!this.explored[y * MAP_W + x]) return { ok: false, reason: 'Unexplored' };
       }
     const cx = tx + def.w / 2, cy = ty + def.h / 2;
-    let near = false;
-    for (const b of this.buildings) {
-      if (b.team !== TEAM_PLAYER || b.dead || b.def.wall) continue;
-      const d = Math.hypot(b.tx + b.w / 2 - cx, b.ty + b.h / 2 - cy);
-      if (d <= BUILD_RADIUS + b.w / 2) { near = true; break; }
+    const site = this.siteUnder(tx, ty, def.w, def.h);
+    if (def.mine) {
+      if (!site) return { ok: false, reason: 'Must be built on a rare-earth deposit' };
+      if (site.mine && !site.mine.dead) return { ok: false, reason: 'Deposit already mined' };
+    } else if (site) return { ok: false, reason: 'Deposits are reserved for mines' };
+    if (def.anywhere) {
+      for (const b of this.buildings)
+        if (b.team === TEAM_ENEMY && !b.dead && Math.hypot(b.tx + b.w / 2 - cx, b.ty + b.h / 2 - cy) < 9) return { ok: false, reason: 'Too close to enemy positions' };
+    } else {
+      let near = false;
+      for (const b of this.buildings) {
+        if (b.team !== TEAM_PLAYER || b.dead || b.def.wall) continue;
+        const d = Math.hypot(b.tx + b.w / 2 - cx, b.ty + b.h / 2 - cy);
+        if (d <= BUILD_RADIUS + b.w / 2) { near = true; break; }
+      }
+      if (!near) return { ok: false, reason: def.mine ? 'Too far: build an Outpost nearby first' : 'Too far from your base' };
     }
-    if (!near) return { ok: false, reason: 'Too far from your base' };
     // no enemy units on the footprint
     for (const u of this.units) {
       if (u.team !== TEAM_ENEMY || u.air || u.dead) continue;
@@ -1662,12 +1840,18 @@ export class Game {
     return { ok: true };
   }
 
+  siteUnder(tx, ty, w, h) {
+    return this.sites.find((s) => s.tx >= tx && s.tx < tx + w && s.ty >= ty && s.ty < ty + h) || null;
+  }
+
   placeBuilding(type, tx, ty) {
     const c = this.canPlace(type, tx, ty);
     if (!c.ok) return c;
     this.credits -= this.costOf(type, true);
+    const paid = this.costOf(type, true);
     const b = this.addBuilding(type, TEAM_PLAYER, tx, ty, false);
-    b.paid = this.costOf(type, true);
+    b.paid = paid;
+    if (b.def.mine) { b.site = this.siteUnder(tx, ty, b.w, b.h); b.site.mine = b; }
     this.sfx('place', b.x, b.y);
     this.updateFog();
     return { ok: true, building: b };
@@ -1700,6 +1884,7 @@ export class Game {
     this.credits += refund;
     b.dead = true;
     this.path.setBlock(b, false);
+    if (b.site) b.site.mine = null;
     this.fx({ type: 'explosion', x: b.x, y: b.y, size: 20, life: 0.4 });
     this.notify(`${b.def.name} recycled (+${refund})`, 'info');
     this.updateEconomy(0);
