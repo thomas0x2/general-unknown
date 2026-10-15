@@ -97,7 +97,8 @@ export class Game {
 
     this.wave = { n: 0, next: WAVE.first, lastSpawn: null };
     this.missileT = 30;
-    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0 };
+    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0, infantry: 0, drones: 0 };
+    this.unlockWatch = []; // locked factions to announce mid-run: { id, name, stat, need, have }
     this.throttles = new Map();
     this.income = 0; this.supplyUsed = 0; this.supplyCap = 0;
 
@@ -360,6 +361,8 @@ export class Game {
     for (const p of this.projectiles) if (!p.dead) this.updateProjectile(p, dt);
     this.updateSites(dt);
     this.updateEnemyAI(dt);
+
+    if (this.unlockWatch.length && this.throttle('unlockwatch', 1)) this.checkUnlocks();
 
     this.fogT -= dt;
     if (this.fogT <= 0) { this.fogT = FOG_INTERVAL; this.updateFog(); }
@@ -1065,7 +1068,7 @@ export class Game {
       b.hp = Math.min(st.maxHp, b.hp + st.maxHp * 0.92 * dt / t);
       if (b.progress >= 1) {
         b.built = true; b.progress = 1;
-        this.stats.built++;
+        if (b.team === TEAM_PLAYER) this.stats.built++;
         this.notify(`${b.def.name} online`, 'info', null);
         this.sfx('built', b.x, b.y);
         this.updateEconomy(0);
@@ -1167,6 +1170,8 @@ export class Game {
     const x = t ? (t.x + 0.5) * TILE : b.x, y = t ? (t.y + 0.5) * TILE : b.y + b.radius + 10;
     const u = this.spawnUnit(type, TEAM_PLAYER, x + (this.rng() - 0.5) * 8, y + (this.rng() - 0.5) * 8);
     this.stats.trained++;
+    if (u.def.cls === 'infantry') this.stats.infantry++;
+    if (u.def.cls === 'drone') this.stats.drones++;
     if (b.rally) this.orderMove([u], b.rally.x, b.rally.y, b.rally.attack);
     else this.setIdle(u);
     this.sfx('ready', b.x, b.y);
@@ -1519,6 +1524,20 @@ export class Game {
       for (const u of this.units) {
         if (u.team !== TEAM_ENEMY || u.garrison || u.dead) continue;
         if (u.order.type === 'idle' && !u.target) u.order = { type: 'amove', x: this.hq.x, y: this.hq.y, goals: this.hqGoals, goalTile: 'hq' };
+      }
+    }
+  }
+
+  // Announce a faction unlock the moment this run pushes a lifetime milestone over the line.
+  checkUnlocks() {
+    for (const w of this.unlockWatch) {
+      if (w.announced) continue;
+      const run = w.fromRun(this);
+      const total = w.mode === 'max' ? Math.max(w.have, run) : w.have + run;
+      if (total >= w.need) {
+        w.announced = true;
+        this.notify(`Faction unlocked: ${w.name}! Available from your next timeline.`, 'good');
+        this.sfx('research');
       }
     }
   }

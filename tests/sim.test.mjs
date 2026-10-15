@@ -2,7 +2,7 @@
 // and checks invariants. Usage: node tests/sim.test.mjs [--verbose]
 import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
-import { defaultProfile, computeReward, metaNodesFor, loadMeta, getProfile, buyNode, defaultMeta } from '../src/meta.js';
+import { defaultProfile, computeReward, metaNodesFor, loadMeta, getProfile, buyNode, defaultMeta, isFactionUnlocked, recordMilestones, unlockWatchList, unlockProgress } from '../src/meta.js';
 import { BUILDINGS, UNITS, TILE, TEAM_PLAYER, TEAM_ENEMY } from '../src/data.js';
 import { CARDS, RARITIES, makeDraft, cardAvailable } from '../src/upgrades.js';
 import { FACTIONS, FACTION_ORDER } from '../src/factions.js';
@@ -222,6 +222,9 @@ test('separate save profiles and v1 migration', () => {
   assert.equal(m.profiles.valdara.chronons, 77);
   assert.equal(m.profiles.valdara.levels.d_hp, 2);
   assert.ok(m.seenIntro);
+  assert.ok(isFactionUnlocked(m, 'skyrep'), 'old best wave 9 unlocks the Sky Republic on migration');
+  assert.ok(!isFactionUnlocked(m, 'swarm'));
+  m.unlocked.push('swarm'); // pretend it was earned
   getProfile(m, 'swarm').chronons = 30;
   assert.ok(buyNode(m, 'swarm', 'stinger'));
   assert.equal(getProfile(m, 'swarm').chronons, 0);
@@ -230,6 +233,41 @@ test('separate save profiles and v1 migration', () => {
   assert.equal(m2.profiles.swarm.levels.stinger, 1, 'v2 save round-trips');
   delete globalThis.localStorage;
   assert.ok(defaultMeta().profiles);
+});
+
+test('factions unlock through lifetime milestones', () => {
+  const meta = defaultMeta();
+  for (const fid of FACTION_ORDER) assert.equal(isFactionUnlocked(meta, fid), fid === 'valdara', `${fid} initial lock state`);
+  // a timeline that trains 30 infantry and 30 drones, builds 25 structures, kills one outpost, reaches wave 6
+  const fake = { stats: { infantry: 30, drones: 30, built: 25, outposts: 1 }, wave: { n: 6 } };
+  let fresh = recordMilestones(meta, fake);
+  assert.deepEqual(fresh, ['swarm']);
+  assert.equal(unlockProgress(meta, 'ironguard').have, 30);
+  fresh = recordMilestones(meta, { stats: { infantry: 25, drones: 0, built: 20, outposts: 1 }, wave: { n: 9 } });
+  assert.deepEqual(fresh.sort(), ['forge', 'ghostnet', 'ironguard', 'skyrep']);
+  assert.ok(FACTION_ORDER.every((fid) => isFactionUnlocked(meta, fid)));
+  assert.equal(unlockWatchList(meta).length, 0);
+});
+
+test('a running timeline announces unlocks as soon as a milestone is crossed', () => {
+  const meta = defaultMeta();
+  meta.milestones.drones = 29;
+  const g = new Game({ profile: defaultProfile(), seed: 21 });
+  g.unlockWatch = unlockWatchList(meta);
+  g.credits = 9999;
+  tryPlace(g, 'dronebay');
+  const bay = g.buildings.find((b) => b.type === 'dronebay');
+  for (let i = 0; i < 30 * 20; i++) g.step(1 / 30);
+  g.events.length = 0;
+  g.train(bay, 'recon');
+  let seen = false;
+  for (let i = 0; i < 30 * 10 && !seen; i++) {
+    g.step(1 / 30);
+    seen = g.events.some((e) => e.type === 'notify' && /Swarm Collective/.test(e.text));
+    g.events.length = 0;
+  }
+  assert.ok(seen, 'swarm unlock announced mid-run');
+  assert.equal(g.stats.drones, 1);
 });
 
 const results = {};

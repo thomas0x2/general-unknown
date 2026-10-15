@@ -26,9 +26,10 @@ await page.waitForTimeout(500);
 await page.screenshot({ path: `${out}/03a-factions.png` });
 await page.click('[data-faction="ghostnet"]');
 await page.waitForTimeout(300);
-await page.screenshot({ path: `${out}/03b-lab.png` });
-await page.click('#btn-lab-back');
+if (await page.isHidden('#screen-factions')) errors.push('locked faction could be selected');
 await page.click('[data-faction="valdara"]');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/03b-lab.png` });
 await page.click('#btn-begin');
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/03-game-start.png` });
@@ -95,13 +96,20 @@ await page.screenshot({ path: `${out}/07-enemy-base.png` });
 await page.evaluate(() => { const g = window.app.game; for (let i = 0; i < 30 * 600 && !g.over; i++) g.step(1 / 30); const R = window.app.renderer; R.cam.x = g.hq.x; R.cam.y = g.hq.y; R.cam.zoom = 1; });
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${out}/08-late.png` });
-// end the run via the time machine
+// cross the Iron Guard milestone, then end the run via the time machine
+await page.evaluate(() => { const g = window.app.game; g.stats.infantry += 60; });
+await page.waitForTimeout(1500);
 await page.evaluate(() => window.app.game && !window.app.game.over && window.app.game.retreat());
 await page.waitForTimeout(5000);
 await page.screenshot({ path: `${out}/09-over.png` });
+if (!(await page.textContent('#over-unlocks')).includes('Iron Guard')) errors.push('unlock not shown on the end screen');
 await page.click('#btn-over-lab');
 await page.waitForTimeout(400);
-await page.screenshot({ path: `${out}/10-lab.png` });
+await page.screenshot({ path: `${out}/10-factions-after-unlock.png` });
+await page.click('[data-faction="ironguard"]');
+await page.waitForTimeout(300);
+if (await page.isHidden('#screen-lab')) errors.push('newly unlocked faction cannot be selected');
+await page.screenshot({ path: `${out}/11-ironguard-lab.png` });
 
 await browser.close();
 server.close();

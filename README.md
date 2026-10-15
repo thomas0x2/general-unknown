@@ -37,7 +37,24 @@ chronons, Chrono Lab unlocks and records are tracked separately per faction.
 | **Forge Union** | Industrial might | Cheap self-repairing buildings, +30% production, richer fabricators | Repair Crawlers, Juggernaut super-tanks, Arms Foundry, Bastion fortress | Overdrive (3× production) |
 | **Sky Republic** | Air power | Strong, fast aircraft, longer-range AA; weak ground troops | Attack Helicopters, Tiltrotor Gunships, Strike Fighters, AWACS (marks targets), Airbase, Rearm Pad | Air Strike (bomber carpet run) |
 
-Saves from before factions existed are migrated into the Valdaran profile.
+### Unlocking factions
+
+You start with the Valdaran Defense Force. The other nations join the alliance when you hit lifetime
+milestones, counted across every timeline with any faction:
+
+| Faction | Unlock |
+| --- | --- |
+| Iron Guard | Train 50 infantry units |
+| Swarm Collective | Build 30 drones |
+| Ghostnet Directorate | Destroy 2 Forward Outposts |
+| Forge Union | Complete 40 structures |
+| Sky Republic | Reach wave 9 |
+
+Locked factions show their progress on the faction screen. You're alerted mid-run the moment a
+milestone is crossed, and the new faction is revealed at the end of that timeline.
+
+Saves from before factions existed are migrated into the Valdaran profile; any faction you've
+already played (or whose milestone your records already meet) stays unlocked.
 
 ## How it works
 

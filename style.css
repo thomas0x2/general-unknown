@@ -291,3 +291,22 @@ h1 { font-size: clamp(44px, 9vw, 104px); margin: 10px 0 4px; letter-spacing: 0.1
 .lab-title { display: flex; gap: 14px; align-items: center; }
 @media (max-width: 1100px) { .fac-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .fac-grid { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------ faction unlocks */
+#fac-count { color: var(--text); font-weight: 600; }
+.fac-card.locked { cursor: not-allowed; background: rgba(6, 12, 16, 0.85); border-color: var(--line); }
+.fac-card.locked:hover { transform: none; box-shadow: none; border-color: var(--line2); background: rgba(6, 12, 16, 0.9); }
+.fac-card.locked .emblem, .fac-card.locked .fac-top > div, .fac-card.locked .fac-motto, .fac-card.locked .fac-desc { filter: grayscale(1); opacity: 0.55; }
+.fac-lock { border: 1px dashed color-mix(in srgb, var(--fc) 45%, var(--line)); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.fac-lock-head { display: flex; gap: 8px; align-items: center; font-size: 16px; color: #fff; }
+.lock-badge { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; padding: 1px 6px; border: 1px solid var(--fc); color: var(--fc); }
+.fac-lock-hint { color: var(--muted); font-size: 13px; }
+.fac-lock-bar { height: 6px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); }
+.fac-lock-bar div { height: 100%; background: var(--fc); box-shadow: 0 0 8px var(--fc); }
+.fac-lock-num { font-family: var(--mono); font-size: 12px; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.fac-card.denied { animation: denied 0.35s; }
+@keyframes denied { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+.over-unlocks { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-bottom: 18px; }
+.over-unlocks:empty { display: none; }
+.unlock-card { --fc: var(--accent); display: flex; gap: 14px; align-items: center; text-align: left; padding: 12px 18px; border: 1px solid var(--fc); background: radial-gradient(ellipse at 0% 50%, color-mix(in srgb, var(--fc) 22%, transparent), rgba(6, 12, 16, 0.92) 70%); box-shadow: 0 0 30px color-mix(in srgb, var(--fc) 35%, transparent); animation: cardIn 0.5s ease-out 0.4s backwards; }
+.unlock-card .kicker { color: var(--fc); }

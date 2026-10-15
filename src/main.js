@@ -4,7 +4,7 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
-import { loadMeta, saveMeta, computeReward, encodeMemory, getProfile } from './meta.js';
+import { loadMeta, saveMeta, computeReward, encodeMemory, getProfile, isFactionUnlocked, unlockWatchList, recordMilestones } from './meta.js';
 import { FACTIONS } from './factions.js';
 import { setPlayerColor } from './shapes.js';
 import { randomSeed } from './rng.js';
@@ -14,7 +14,7 @@ const STEP = 1 / 30;
 class App {
   constructor() {
     this.meta = loadMeta();
-    this.factionId = FACTIONS[this.meta.faction] ? this.meta.faction : 'valdara';
+    this.factionId = FACTIONS[this.meta.faction] && isFactionUnlocked(this.meta, this.meta.faction) ? this.meta.faction : 'valdara';
     this.applyFactionLook();
     this.audio = new Audio();
     this.renderer = new Renderer(document.getElementById('world'));
@@ -39,11 +39,13 @@ class App {
   get profile() { return getProfile(this.meta, this.factionId); }
 
   setFaction(fid) {
+    if (!isFactionUnlocked(this.meta, fid)) return false;
     this.factionId = fid;
     this.meta.faction = fid;
     getProfile(this.meta, fid);
     this.saveMeta();
     this.applyFactionLook();
+    return true;
   }
 
   applyFactionLook() {
@@ -58,6 +60,7 @@ class App {
     if (opts.escalation != null) m.escalation = Math.min(opts.escalation, m.maxEscalation);
     this.saveMeta();
     this.game = new Game({ profile: m, faction: this.factionId, seed: m.seed, escalation: m.escalation });
+    this.game.unlockWatch = unlockWatchList(this.meta);
     this.renderer.setGame(this.game);
     this.renderer.resize();
     this.renderer.clampCam();
@@ -94,8 +97,9 @@ class App {
     }
     if (g.seed === m.seed) m.memory = encodeMemory(g.explored);
     m.history = [{ wave: g.wave.n, time: Math.floor(g.time), victory: !!g.over.victory, chronons: reward.total }, ...(m.history || [])].slice(0, 20);
+    const unlocked = recordMilestones(this.meta, g);
     this.saveMeta();
-    this.ui.showOver(g.over, reward, g);
+    this.ui.showOver(g.over, reward, g, unlocked);
   }
 
   frame(t) {

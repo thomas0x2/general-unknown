@@ -3,7 +3,7 @@ import {
   UNITS, BUILDINGS, BUILD_ORDER, ARMOR_NAMES, WAVE, TEAM_PLAYER, TEAM_ENEMY, ENEMY_UNITS,
 } from './data.js';
 import { iconFor, emblemFor } from './shapes.js';
-import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode } from './meta.js';
+import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode, isFactionUnlocked, unlockProgress } from './meta.js';
 import { FACTIONS, FACTION_ORDER } from './factions.js';
 import { describeCard } from './upgrades.js';
 
@@ -45,7 +45,7 @@ const MANUAL = `
 <h2>GENERAL UNKNOWN</h2>
 <p>You command the military of a small nation against the overwhelming forces of the Hegemony. Waves of enemy troops, armor and drones will come for your <b>Command HQ</b>. When it falls, the timeline collapses — and the time machine sends you back to the start, with <b>Chronons</b> to spend in the Chrono Lab on permanent upgrades.</p>
 <h3>Factions</h3>
-<p>Six allied nations can hold the line, each with its own doctrine, units, structures, research cards and commander ability, and each keeps its own save: chronons and Chrono Lab unlocks are earned per faction. Valdara fights with combined arms; Iron Guard drowns the enemy in infantry; the Swarm Collective fields cheap drones by the hundred; Ghostnet hacks and stuns the Hegemony's machines and steals them; the Forge Union outbuilds everyone; the Sky Republic rules the air.</p>
+<p>Six allied nations can hold the line, each with its own doctrine, units, structures, research cards and commander ability, and each keeps its own save: chronons and Chrono Lab unlocks are earned per faction. You start with Valdara; the other nations join as you hit lifetime milestones with any faction (train infantry, build drones, complete structures, destroy outposts, survive waves). The faction screen shows what each one needs. Valdara fights with combined arms; Iron Guard drowns the enemy in infantry; the Swarm Collective fields cheap drones by the hundred; Ghostnet hacks and stuns the Hegemony's machines and steals them; the Forge Union outbuilds everyone; the Sky Republic rules the air.</p>
 <h3>Objectives</h3>
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
@@ -114,12 +114,16 @@ export class UI {
       const c = e.target.closest('[data-faction]');
       if (!c) return;
       this.app.audio.ensure();
+      if (!this.app.setFaction(c.dataset.faction)) {
+        this.app.audio.play('error');
+        c.classList.remove('denied'); void c.offsetWidth; c.classList.add('denied');
+        return;
+      }
       this.click();
-      this.app.setFaction(c.dataset.faction);
       this.showLab();
     });
     $('btn-begin').onclick = () => { this.app.audio.ensure(); this.app.startRun({ newMap: $('chk-newmap').checked, escalation: +($('sel-esc').value || 0) }); };
-    $('btn-over-lab').onclick = () => this.showLab();
+    $('btn-over-lab').onclick = () => (this.overNext === 'factions' ? this.showFactions() : this.showLab());
     $('btn-research').onclick = () => this.openResearch();
     $('btn-reroll').onclick = () => { this.game.rerollDraft(); this.click(); this.renderDraft(); };
     $('btn-research-later').onclick = () => this.closeResearch();
@@ -227,12 +231,30 @@ export class UI {
   showFactions() {
     clearInterval(this.introTimer);
     this.showScreen('screen-factions');
+    const open = FACTION_ORDER.filter((fid) => isFactionUnlocked(this.meta, fid)).length;
+    $('fac-count').textContent = `${open} of ${FACTION_ORDER.length} factions unlocked`;
     $('fac-grid').innerHTML = FACTION_ORDER.map((fid) => {
       const f = FACTIONS[fid];
       const p = this.meta.profiles[fid];
       const sig = f.units.filter((u) => !['rifle', 'recon', 'at_team', 'manpads'].includes(u)).slice(0, 8);
       const diff = `<span class="diff" title="Difficulty">${[1, 2, 3].map((i) => `<i class="${i <= f.difficulty ? 'on' : ''}"></i>`).join('')}</span>`;
       const progress = p?.runs ? `Timelines <b>${p.runs}</b> · best wave <b>${p.bestWave}</b> · <b>${p.chronons}</b> ⧗` : 'No timelines yet';
+      if (!isFactionUnlocked(this.meta, fid)) {
+        const u = unlockProgress(this.meta, fid);
+        return `<button class="fac-card locked" data-faction="${fid}" style="--fc:${f.color}" aria-label="${f.name} (locked)">
+        <div class="fac-top"><img class="emblem" src="${emblemFor(f, UNITS[f.emblem])}" alt="">
+          <div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.nation}</div><div class="fac-doc">${f.doctrine}</div></div></div>
+        <div class="fac-motto">“${f.motto}”</div>
+        <div class="fac-desc">${f.desc}</div>
+        <div class="fac-lock">
+          <div class="fac-lock-head"><span class="lock-badge">LOCKED</span><b>${u.text}</b></div>
+          <div class="fac-lock-hint">${f.unlock.hint} Progress counts across every faction.</div>
+          <div class="fac-lock-bar"><div style="width:${u.frac * 100}%"></div></div>
+          <div class="fac-lock-num">${u.have} / ${u.need}</div>
+        </div>
+        <div class="fac-foot"><span>Ability: ${f.ability.name}</span>${diff}</div>
+      </button>`;
+      }
       return `<button class="fac-card ${this.meta.faction === fid ? 'last' : ''}" data-faction="${fid}" style="--fc:${f.color}">
         <div class="fac-top"><img class="emblem" src="${emblemFor(f, UNITS[f.emblem])}" alt="">
           <div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.nation}</div><div class="fac-doc">${f.doctrine}</div></div></div>
@@ -301,7 +323,7 @@ export class UI {
     return `<div class="${cls.join(' ')}" data-node="${n.id}">${img}<div class="nb"><div class="nn">${n.name}</div><div class="nd">${n.desc}</div>${pips}</div><div class="nc">${right}</div></div>`;
   }
 
-  showOver(result, reward, game) {
+  showOver(result, reward, game, unlocked = []) {
     this.closeResearch(true);
     $('modal-pause').hidden = true;
     this.showScreen('screen-over');
@@ -328,6 +350,13 @@ export class UI {
     $('over-reward').innerHTML = '<div class="hint" style="border:none">CHRONONS EARNED</div>' + reward.parts.map(([k, v2]) => `<div><span>${k}</span><b>+${v2}</b></div>`).join('') +
       (reward.mult !== 1 ? `<div class="mult"><span>Multiplier</span><b>×${reward.mult.toFixed(2)}</b></div>` : '') +
       `<div class="total"><span>CHRONONS</span><b>+${reward.total}</b></div>`;
+    $('over-unlocks').innerHTML = unlocked.map((fid) => {
+      const f = FACTIONS[fid];
+      return `<div class="unlock-card" style="--fc:${f.color}"><img class="emblem" src="${emblemFor(f, UNITS[f.emblem])}" alt="">
+        <div><div class="kicker">NEW FACTION UNLOCKED</div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.doctrine} · ${f.unlock.text}</div></div></div>`;
+    }).join('');
+    $('btn-over-lab').textContent = unlocked.length ? 'CHOOSE YOUR NEXT FACTION' : 'ENTER THE CHRONO LAB';
+    this.overNext = unlocked.length ? 'factions' : 'lab';
   }
 
   showInfo(html) {

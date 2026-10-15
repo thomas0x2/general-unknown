@@ -1,7 +1,7 @@
 // Permanent progression between timelines ("Chrono Lab") + persistence.
 import { addMod } from './upgrades.js';
 import { randomSeed } from './rng.js';
-import { FACTIONS } from './factions.js';
+import { FACTIONS, FACTION_ORDER, MILESTONES } from './factions.js';
 
 const SAVE_KEY = 'general-unknown-meta-v2';
 const OLD_SAVE_KEY = 'general-unknown-meta-v1';
@@ -74,7 +74,61 @@ export function defaultProfile() {
 }
 
 export function defaultMeta() {
-  return { version: 2, seenIntro: false, faction: null, profiles: {} };
+  return { version: 2, seenIntro: false, faction: null, profiles: {}, unlocked: ['valdara'], milestones: defaultMilestones() };
+}
+
+function defaultMilestones() {
+  return Object.fromEntries(Object.keys(MILESTONES).map((k) => [k, 0]));
+}
+
+// ---- faction unlocks: lifetime milestones shared across factions
+export function milestoneValue(meta, stat) {
+  const v = meta.milestones[stat] || 0;
+  if (stat === 'bestWave') return Math.max(v, ...Object.values(meta.profiles).map((p) => p.bestWave || 0));
+  return v;
+}
+
+export function isFactionUnlocked(meta, fid) {
+  return !FACTIONS[fid].unlock || meta.unlocked.includes(fid);
+}
+
+export function unlockProgress(meta, fid) {
+  const u = FACTIONS[fid].unlock;
+  if (!u) return null;
+  const have = milestoneValue(meta, u.stat);
+  return { have: Math.min(have, u.need), need: u.need, frac: Math.min(1, have / u.need), text: u.text };
+}
+
+// Locked factions a running game should watch, so it can announce an unlock mid-run.
+export function unlockWatchList(meta) {
+  return FACTION_ORDER.filter((fid) => !isFactionUnlocked(meta, fid)).map((fid) => {
+    const u = FACTIONS[fid].unlock;
+    const m = MILESTONES[u.stat];
+    return { id: fid, name: FACTIONS[fid].name, need: u.need, have: milestoneValue(meta, u.stat), fromRun: m.fromRun, mode: m.mode };
+  });
+}
+
+// Fold a finished timeline into the lifetime milestones; returns newly unlocked faction ids.
+export function recordMilestones(meta, game) {
+  for (const [k, m] of Object.entries(MILESTONES)) {
+    const v = m.fromRun(game) || 0;
+    meta.milestones[k] = m.mode === 'max' ? Math.max(meta.milestones[k] || 0, v) : (meta.milestones[k] || 0) + v;
+  }
+  return refreshUnlocks(meta);
+}
+
+export function refreshUnlocks(meta) {
+  const fresh = [];
+  for (const fid of FACTION_ORDER) {
+    if (isFactionUnlocked(meta, fid)) continue;
+    const u = FACTIONS[fid].unlock;
+    // anyone who already played a faction (older saves) keeps it
+    if (milestoneValue(meta, u.stat) >= u.need || meta.profiles[fid]?.runs > 0) {
+      meta.unlocked.push(fid);
+      fresh.push(fid);
+    }
+  }
+  return fresh;
 }
 
 // Each faction has its own save profile (chronons, unlocks, records, map memory).
@@ -89,6 +143,10 @@ export function loadMeta() {
     if (raw) {
       const m = { ...defaultMeta(), ...JSON.parse(raw) };
       for (const k of Object.keys(m.profiles)) m.profiles[k] = { ...defaultProfile(), ...m.profiles[k] };
+      m.milestones = { ...defaultMilestones(), ...m.milestones };
+      if (!m.unlocked.includes('valdara')) m.unlocked.unshift('valdara');
+      refreshUnlocks(m);
+      if (m.faction && !isFactionUnlocked(m, m.faction)) m.faction = 'valdara';
       return m;
     }
     // migrate a pre-faction save into the Valdaran profile
@@ -101,6 +159,7 @@ export function loadMeta() {
       for (const k of Object.keys(p)) if (o[k] !== undefined) p[k] = o[k];
       m.profiles.valdara = p;
       m.faction = 'valdara';
+      refreshUnlocks(m);
       return m;
     }
   } catch { /* corrupt or unavailable storage: start fresh */ }
