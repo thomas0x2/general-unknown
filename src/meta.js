@@ -24,7 +24,7 @@ const SHARED_NODES = [
   { id: 'd_supply', branch: 'doctrine', name: 'Logistics Doctrine', desc: '+4 supply and +4 compute per level.', cost: [20, 40, 70] },
   { id: 'd_garrison', branch: 'doctrine', name: 'Standing Army', desc: 'Start each timeline with 2 extra Rifle Squads per level.', cost: [20, 40, 70] },
   // ---- Temporal
-  { id: 't_research', branch: 'temporal', name: 'Accelerated Research', desc: '+12% research speed per level.', cost: [20, 40, 65, 95] },
+  { id: 't_research', branch: 'temporal', name: 'Accelerated Research', desc: 'A bonus breakthrough every 5 waves; each further level makes it one wave sooner (every 2 waves at max).', cost: [20, 40, 65, 95] },
   { id: 't_luck', branch: 'temporal', name: 'Probability Engine', desc: 'Higher odds of rare research results per level.', cost: [30, 60, 100, 150] },
   { id: 't_choice', branch: 'temporal', name: 'Parallel Timelines', desc: 'See one extra research option each draft.', cost: [120] },
   { id: 't_reroll', branch: 'temporal', name: 'Quantum Reroll', desc: '+1 research reroll per timeline, per level.', cost: [25, 50, 90] },
@@ -239,13 +239,13 @@ export function applyMeta(profile, game) {
   addMod(m, 'build', 'all', 0.08 * L('d_build'));
   m.supply += 4 * L('d_supply');
   m.compute += 4 * L('d_supply');
-  m.research += 0.12 * L('t_research');
   m.abilityCd += 0.12 * L('f_ability');
   m.abilityPower += 0.15 * L('f_ability');
   if (L('f_special')) game.faction.special.apply(game, L('f_special'));
   game.credits += 150 * L('d_credits');
   game.extraRifles = 2 * L('d_garrison');
   game.luck = L('t_luck');
+  game.bonusResearchEvery = L('t_research') ? 6 - L('t_research') : 0;
   game.draftSize = 3 + L('t_choice');
   game.research.rerolls += L('t_reroll');
   game.research.ready += L('t_head');

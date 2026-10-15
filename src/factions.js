@@ -15,7 +15,7 @@ export const FACTIONS = {
     doctrine: 'Combined Arms',
     motto: 'Every tool, every front.',
     desc: 'A balanced modern military. Infantry, robots, drones and fortifications all work together. Nothing is exceptional, nothing is missing.',
-    playstyle: ['Balanced roster across infantry, robots and drones', 'Research program +10%, one extra reroll every timeline', 'Ability: Artillery Barrage'],
+    playstyle: ['Balanced roster across infantry, robots and drones', 'Better research odds, one extra reroll every timeline', 'Ability: Artillery Barrage'],
     difficulty: 1,
     emblem: 'titan',
     start: ['rifle', 'rifle', 'recon'],
@@ -37,13 +37,13 @@ export const FACTIONS = {
       node('interceptor', 'Interceptor Array', 'Unlock long-range missile defense.', 100, ['interceptor'], 'Structures', ['ciws']),
       node('jammer', 'EW Jammer', 'Unlock electronic warfare against drones and missiles.', 80, ['jammer'], 'Structures', ['ciws']),
       node('radar', 'Radar Station', 'Unlock wide-area radar coverage.', 45, ['radar'], 'Structures'),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Structures'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Structures'),
       node('repair', 'Nanite Repair Bay', 'Unlock area repair for units and buildings.', 100, ['repair'], 'Structures', ['lab']),
       node('battery', 'Missile Battery', 'Unlock long-range guided missile launchers.', 120, ['battery'], 'Structures', ['radar']),
       node('railgun', 'Railgun', 'Unlock hypersonic electromagnetic railguns.', 280, ['railgun'], 'Structures', ['battery']),
     ],
     passive(g) {
-      g.mods.research += 0.1;
+      g.mods.luck += 0.5;
       g.research.rerolls += 1;
     },
     ability: {
@@ -90,7 +90,7 @@ export const FACTIONS = {
       node('ciws', 'Laser CIWS', 'Unlock anti-air / anti-missile laser turrets.', 55, ['ciws'], 'Structures'),
       node('interceptor', 'Interceptor Array', 'Unlock long-range missile defense.', 100, ['interceptor'], 'Structures', ['ciws']),
       node('radar', 'Radar Station', 'Unlock wide-area radar coverage.', 45, ['radar'], 'Structures'),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Structures'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Structures'),
       node('battery', 'Missile Battery', 'Unlock long-range guided missile launchers.', 120, ['battery'], 'Structures', ['radar']),
     ],
     passive(g) {
@@ -145,7 +145,7 @@ export const FACTIONS = {
       node('helipad', 'Rearm Pad', 'Unlock pads that repair drones in the field.', 50, ['helipad'], 'Infrastructure'),
       node('manpads', 'MANPADS Team', 'Unlock anti-air missile infantry.', 35, ['manpads'], 'Infrastructure'),
       node('radar', 'Radar Station', 'Unlock wide-area radar coverage.', 45, ['radar'], 'Infrastructure'),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Infrastructure'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Infrastructure'),
       node('ciws', 'Laser CIWS', 'Unlock anti-air / anti-missile laser turrets.', 55, ['ciws'], 'Structures'),
       node('jammer', 'EW Jammer', 'Unlock electronic warfare against drones and missiles.', 70, ['jammer'], 'Structures', ['ciws']),
       node('interceptor', 'Interceptor Array', 'Unlock long-range missile defense.', 100, ['interceptor'], 'Structures', ['ciws']),
@@ -177,7 +177,7 @@ export const FACTIONS = {
     doctrine: 'Cyber Warfare',
     motto: 'Their machines are our machines.',
     desc: 'A small, wired nation whose real army lives in its networks. It hacks, jams and stuns the Hegemony\'s machines and turns their robots and drones against them.',
-    playstyle: ['Hackers convert enemy vehicles, robots and drones', 'Research +20%, sight +15%, EW range +30%; units deal 10% less damage', 'Unique: Hacker Cells, EMP Drones, Cyber Ops Center, Disruptor Tower', 'Ability: Network Breach'],
+    playstyle: ['Hackers convert enemy vehicles, robots and drones', 'Much better research odds, sight +15%, EW range +30%; units deal 10% less damage', 'Unique: Hacker Cells, EMP Drones, Cyber Ops Center, Disruptor Tower', 'Ability: Network Breach'],
     difficulty: 3,
     unlock: {
       requires: ['swarm', 'skyrep'],
@@ -201,11 +201,11 @@ export const FACTIONS = {
       node('aegis', 'Aegis Rover', 'Unlock mobile laser point-defense rovers.', 110, ['aegis'], 'Robots', ['mule']),
       node('ciws', 'Laser CIWS', 'Unlock anti-air / anti-missile laser turrets.', 55, ['ciws'], 'Structures'),
       node('interceptor', 'Interceptor Array', 'Unlock long-range missile defense.', 100, ['interceptor'], 'Structures', ['ciws']),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Structures'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Structures'),
     ],
     passive(g) {
       const m = g.mods;
-      m.research += 0.2;
+      m.luck += 1;
       addMod(m, 'sight', 'all', 0.15);
       addMod(m, 'range', 'jammer', 0.3);
       addMod(m, 'range', 'disruptor', 0.15);
@@ -252,7 +252,7 @@ export const FACTIONS = {
       node('fpv', 'FPV Kamikazes', 'Unlock cheap one-way attack drones.', 30, ['fpv'], 'Robots'),
       node('foundry', 'Arms Foundry', 'Unlock heavy industry that speeds up all production.', 60, ['foundry'], 'Industry'),
       node('repair', 'Nanite Repair Bay', 'Unlock area repair for units and buildings.', 90, ['repair'], 'Industry'),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Industry'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Industry'),
       node('bunker', 'Bunker', 'Unlock heavily armored autocannon bunkers.', 35, ['bunker'], 'Fortifications'),
       node('bastion', 'Bastion', 'Unlock prefabricated twin-cannon fortresses.', 110, ['bastion'], 'Fortifications', ['bunker']),
       node('ciws', 'Laser CIWS', 'Unlock anti-air / anti-missile laser turrets.', 55, ['ciws'], 'Fortifications'),
@@ -312,7 +312,7 @@ export const FACTIONS = {
       node('ciws', 'Laser CIWS', 'Unlock anti-air / anti-missile laser turrets.', 55, ['ciws'], 'Ground'),
       node('interceptor', 'Interceptor Array', 'Unlock long-range missile defense.', 90, ['interceptor'], 'Ground', ['ciws']),
       node('radar', 'Radar Station', 'Unlock wide-area radar coverage.', 45, ['radar'], 'Ground'),
-      node('lab', 'Research Lab', 'Unlock labs that accelerate the research program.', 65, ['lab'], 'Ground'),
+      node('lab', 'Research Lab', 'Unlock labs that raise the rarity of research results.', 65, ['lab'], 'Ground'),
       node('battery', 'Missile Battery', 'Unlock long-range guided missile launchers.', 120, ['battery'], 'Ground', ['radar']),
     ],
     passive(g) {

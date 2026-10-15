@@ -30,10 +30,10 @@ chronons, Chrono Lab unlocks and records are tracked separately per faction.
 
 | Faction | Doctrine | Playstyle | Signature units / structures | Ability |
 | --- | --- | --- | --- | --- |
-| **Valdaran Defense Force** | Combined arms | Balanced; +10% research, extra reroll | Full mix of infantry, robots, drones, railguns | Artillery Barrage |
+| **Valdaran Defense Force** | Combined arms | Balanced; better research odds, extra reroll | Full mix of infantry, robots, drones, railguns | Artillery Barrage |
 | **Iron Guard** | Total infantry | Cheap, fast, tough infantry, +8 supply; no robots | Grenadiers, Shock Troopers, Combat Medics, Mortar Teams, Field Hospital | Mass Mobilization (free reservists) |
 | **Swarm Collective** | Drone swarms | Drones 25% cheaper, faster, half compute; weak infantry | Wasp gun drones, Stinger interceptors, Bomber drones, self-replicating Swarm Hive | Swarm Strike (free FPV wave) |
-| **Ghostnet Directorate** | Cyber warfare | Hack and stun the enemy; +20% research, +30% EW range | Hacker Cells (convert enemy vehicles, robots, drones), EMP drones, Cyber Ops Center (shrinks waves, spoofs missiles), Disruptor Tower | Network Breach (mass stun + capture) |
+| **Ghostnet Directorate** | Cyber warfare | Hack and stun the enemy; much better research odds, +30% EW range | Hacker Cells (convert enemy vehicles, robots, drones), EMP drones, Cyber Ops Center (shrinks waves, spoofs missiles), Disruptor Tower | Network Breach (mass stun + capture) |
 | **Forge Union** | Industrial might | Cheap self-repairing buildings, +30% production, mines yield 40% more | Repair Crawlers, Juggernaut super-tanks, Arms Foundry, Bastion fortress | Overdrive (3× production) |
 | **Sky Republic** | Air power | Strong, fast aircraft, longer-range AA; weak ground troops | Attack Helicopters, Tiltrotor Gunships, Strike Fighters, AWACS (marks targets), Airbase, Rearm Pad | Air Strike (bomber carpet run) |
 
@@ -82,9 +82,11 @@ faction screen says which were re-locked); chronons and Chrono Lab upgrades are 
 - **Formations:** a group you move arrives in formation facing its direction of travel (armour in front,
   ranged and support units behind) and travels at the pace of its slowest member. Every stopped unit stands
   on its own point of a 16 px movement grid. Hold **Shift** to queue orders as waypoints.
-- Your **research program** periodically produces a breakthrough: pick one of three random upgrades
-  rolled at **Common / Uncommon / Rare / Epic / Legendary** rarity. Legendaries include unique effects
-  like *Chrono Shield*, *Hive Mind* and *Overwatch Network*.
+- **Research:** every wave you survive unlocks one breakthrough (as soon as all its attackers are destroyed,
+  or at the latest when the next wave launches); destroying enemy outposts and facilities gives extra ones.
+  Pick one of three random upgrades rolled at **Common / Uncommon / Rare / Epic / Legendary** rarity.
+  **Research Labs** raise the average rarity (each extra lab a bit less); the top bar shows the current odds.
+  Legendaries include unique effects like *Chrono Shield*, *Hive Mind* and *Overwatch Network*.
 
 ### Striking back
 Scout to find the Hegemony. Their **Forward Outposts** are where waves launch from; destroy them and the
@@ -100,7 +102,7 @@ time survived). Spend them in three branches:
 - **Arsenal**: unlock new units and structures (each faction has its own tree).
 - **Faction doctrines**: upgrade your commander ability and the faction's specialty.
 - **Doctrine**: stacking permanent bonuses (HP, damage, income, build speed, starting credits, supply…).
-- **Temporal**: research speed, rarity luck, extra draft options, rerolls, free starting drafts,
+- **Temporal**: bonus breakthroughs every few waves, rarity luck, extra draft options, rerolls, free starting drafts,
   *Early Warning* (see the next wave's composition), *Chrono Cartography* (remember explored terrain from
   previous timelines) and *Temporal Recon* (know where the enemy is from the start).
 

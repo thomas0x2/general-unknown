@@ -22,8 +22,9 @@
         <div class="stat" data-tip="mines"><span class="ico ico-ore"></span><b id="t-mines">0/0</b></div>
         <div class="stat research" data-tip="research">
           <span class="ico ico-research"></span>
-          <div class="bar"><div id="t-rbar"></div></div>
+          <div class="bar odds" id="t-rodds"></div>
           <button id="btn-research" class="pulse" hidden>RESEARCH <kbd>Tab</kbd> <span id="t-rready"></span></button>
+          <span id="t-ravg" class="ravg"></span>
         </div>
       </div>
       <div class="tb-group center">
@@ -144,6 +145,7 @@
     <div class="modal-box research-box">
       <div class="kicker">RESEARCH PROGRAM</div>
       <h2 id="research-title">BREAKTHROUGH</h2>
+      <div id="research-odds" class="research-odds"></div>
       <div id="research-cards" class="cards"></div>
       <div class="modal-foot">
         <button id="btn-reroll">⟳ REROLL <span id="reroll-n"></span></button>

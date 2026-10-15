@@ -14,7 +14,7 @@ export const RARITIES = [
 const STATS = ['hp', 'dmg', 'range', 'rate', 'speed', 'sight', 'build', 'cost', 'regen', 'dr', 'splash', 'intercept', 'hack', 'stun'];
 
 export function createMods() {
-  const m = { income: 0, research: 0, supply: 0, compute: 0, bounty: 0, abilityCd: 0, abilityPower: 0, flags: {} };
+  const m = { income: 0, luck: 0, supply: 0, compute: 0, bounty: 0, abilityCd: 0, abilityPower: 0, flags: {} };
   for (const s of STATS) m[s] = {};
   return m;
 }
@@ -46,6 +46,7 @@ function statCard(id, name, tag, effects, text, extra = {}) {
 function fmtVal([stat, , v], mult) {
   if (stat === 'regen') return `${(v * mult * 100).toFixed(1)}%`;
   if (stat === 'supply' || stat === 'compute') return `${Math.round(v * mult)}`;
+  if (stat === 'luck') return (v * mult).toFixed(1);
   return pct(v * mult);
 }
 
@@ -79,7 +80,7 @@ export const CARDS = [
   statCard('turret_dmg', 'Depleted Uranium Rounds', 'Defenses', [['dmg', 'defense', 0.07], ['dmg', 'hq', 0.07]], 'Defenses and HQ +{0} damage.'),
   statCard('thermobaric', 'Thermobaric Payloads', 'Global', [['splash', 'all', 0.08], ['dmg', 'battery', 0.06]], 'Splash radius +{0}, Missile Battery damage +{1}.'),
   statCard('intercept_algo', 'Intercept Algorithms', 'Defenses', [['intercept', 'all', 0.15]], 'Damage against missiles and drones from intercept weapons +{0}.', { req: has('ciws', 'interceptor', 'aegis') }),
-  statCard('deep_learning', 'Deep Learning Cluster', 'Research', [['research', '', 0.1]], 'Research speed +{0}.'),
+  statCard('deep_learning', 'Deep Learning Cluster', 'Research', [['luck', '', 0.4]], 'Research luck +{0} (better rarity odds).'),
   statCard('salvage', 'Salvage Protocol', 'Economy', [['bounty', '', 0.04]], 'Kills refund {0} of the enemy\'s value as credits.'),
   statCard('supply_chain', 'Supply Chain AI', 'Economy', [['supply', '', 2], ['compute', '', 2]], 'Supply cap +{0}, compute cap +{1}.'),
   statCard('reactive', 'Reactive Armor', 'All Units', [['dr', 'unit', 0.03]], 'Units take {0} less damage.', { minRarity: 1 }),
@@ -91,9 +92,9 @@ export const CARDS = [
     apply: (game, m) => { game.credits += Math.round(220 * m); },
   },
   {
-    id: 'breakthrough', name: 'Research Breakthrough', tag: 'Research', minRarity: 1,
-    text: (m) => `Gain ${Math.round(25 * m)}% of a research level immediately.`,
-    apply: (game, m) => { game.research.points += game.research.needed * 0.25 * m; },
+    id: 'breakthrough', name: 'Research Breakthrough', tag: 'Research', minRarity: 2,
+    text: (m) => `Gain ${m >= 5 ? 2 : 1} extra breakthrough${m >= 5 ? 's' : ''} immediately.`,
+    apply: (game, m) => { game.research.ready += m >= 5 ? 2 : 1; },
   },
   statCard('aero', 'Aerospace Composites', 'Aircraft', [['hp', 'aircraft', 0.08], ['speed', 'aircraft', 0.05]], 'Aircraft +{0} max HP, +{1} speed.', { req: hasClass('aircraft') }),
   {
@@ -121,7 +122,7 @@ export const CARDS = [
   },
   statCard('zero_day', 'Zero-Day Exploits', 'Ghostnet', [['hack', 'all', 0.2]], 'Hacking speed +{0}.', { faction: 'ghostnet' }),
   statCard('emp_harden', 'Pulse Amplifiers', 'Ghostnet', [['stun', 'all', 0.15]], 'Stun durations +{0}.', { faction: 'ghostnet' }),
-  statCard('signal_intel', 'Signals Intelligence', 'Ghostnet', [['research', '', 0.1], ['sight', 'all', 0.05]], 'Research +{0}, sight +{1}.', { faction: 'ghostnet' }),
+  statCard('signal_intel', 'Signals Intelligence', 'Ghostnet', [['luck', '', 0.3], ['sight', 'all', 0.05]], 'Research luck +{0}, sight +{1}.', { faction: 'ghostnet' }),
   statCard('lean_mfg', 'Lean Manufacturing', 'Forge', [['build', 'all', 0.08], ['cost', 'building', 0.03]], 'Production +{0} faster, buildings {1} cheaper.', { faction: 'forge' }),
   statCard('alloys', 'Reinforced Alloys', 'Forge', [['hp', 'robot', 0.08], ['hp', 'building', 0.08]], 'Robots +{0} HP, buildings +{1} HP.', { faction: 'forge' }),
   {
@@ -182,9 +183,23 @@ export const CARDS = [
 
 export const CARD_BY_ID = Object.fromEntries(CARDS.map((c) => [c.id, c]));
 
+// Luck shifts the odds towards higher tiers: tier i's weight is scaled by (1 + LUCK_STEP * luck)^i.
+const LUCK_STEP = 0.15;
+export function rarityOdds(luck) {
+  const k = 1 + LUCK_STEP * Math.max(0, luck);
+  const w = RARITIES.map((r, i) => r.weight * Math.pow(k, i));
+  const sum = w.reduce((a, b) => a + b, 0);
+  return w.map((x) => x / sum);
+}
+
+// Expected rarity tier (0 = Common … 4 = Legendary).
+export function averageRarity(luck) {
+  return rarityOdds(luck).reduce((a, p, i) => a + p * i, 0);
+}
+
 function rollRarity(rng, luck) {
-  const items = RARITIES.map((r, i) => ({ i, w: i === 0 ? r.weight : r.weight * (1 + 0.35 * luck) }));
-  return weightedPick(rng, items, (x) => x.w).i;
+  const odds = rarityOdds(luck);
+  return weightedPick(rng, odds.map((p, i) => ({ i, p })), (x) => x.p).i;
 }
 
 // Build a draft of `count` distinct cards. avail(card) decides whether a card fits this game.

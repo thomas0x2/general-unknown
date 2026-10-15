@@ -5,7 +5,7 @@ import {
 import { iconFor, emblemFor } from './shapes.js';
 import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode, isFactionUnlocked, unlockProgress, unlockSummary } from './meta.js';
 import { FACTIONS, FACTION_ORDER } from './factions.js';
-import { describeCard } from './upgrades.js';
+import { describeCard, RARITIES, rarityOdds, averageRarity } from './upgrades.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -51,7 +51,7 @@ const MANUAL = `
 <h3>Objectives</h3>
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
-<li><b>Research.</b> Your research program produces random upgrades of five rarities. Press <kbd>Tab</kbd> when a breakthrough is ready.</li>
+<li><b>Research.</b> Every wave you survive unlocks one research breakthrough: pick one of several random upgrades of five rarities (press <kbd>Tab</kbd>). Research Labs raise the average rarity.</li>
 <li><b>Mine.</b> Income comes from <b>rare-earth deposits</b>: build a <b>Mine</b> on a deposit and enough <b>Refineries</b> to process the ore (the HQ refines one mine, each Refinery two more). Far deposits need an <b>Outpost</b> first: expensive, but it can be built anywhere you have scouted and extends your build area.</li>
 <li><b>Scout.</b> The map is covered by fog of war. Drones and radar reveal it, but drones can only fly within range of your HQ, Drone Bays, Outposts and <b>Uplink Towers</b>. Grab <b>supply caches</b> on the way.</li>
 <li><b>Supply and compute.</b> Infantry and aircraft use supply (Logistics Hubs); drones and robots use compute (<b>Data Centers</b>).</li>
@@ -507,7 +507,14 @@ export class UI {
     mn.textContent = `${g.mines.refined}/${g.mines.total}`;
     mn.style.color = g.mines.total > g.mines.refined ? 'var(--warn)' : '';
     const R = g.research;
-    $('t-rbar').style.width = `${Math.min(100, (R.points / R.needed) * 100)}%`;
+    const luck = g.researchLuck();
+    if (luck !== this.lastLuck) {
+      this.lastLuck = luck;
+      $('t-rodds').innerHTML = rarityOdds(luck).map((p, i) => `<i style="width:${(p * 100).toFixed(1)}%;background:${RARITIES[i].color}"></i>`).join('');
+      const avg = averageRarity(luck), rar = RARITIES[Math.min(4, Math.round(avg))];
+      $('t-ravg').textContent = `~${rar.name}`;
+      $('t-ravg').style.color = rar.color;
+    }
     $('btn-research').hidden = R.ready <= 0;
     $('t-rready').textContent = R.ready > 1 ? `×${R.ready}` : '';
     const left = g.wave.next - g.time;
@@ -635,7 +642,7 @@ export class UI {
     let html = '';
     if (!sel.length) {
       html = `<div class="empty-sel"><b>No selection.</b> Drag to select units · right-click to move or attack · build from the panel on the right.<br>` +
-        `Wave ${g.wave.n + 1} arrives in <b>${fmtTime(g.wave.next - g.time)}</b>. Research: <b>${g.researchRate().toFixed(2)}</b>/s.` +
+        `Wave ${g.wave.n + 1} arrives in <b>${fmtTime(g.wave.next - g.time)}</b>. Beat it for a research breakthrough.` +
         `${g.research.ready ? ' <b style="color:var(--violet)">Breakthrough ready — press Tab.</b>' : ''}</div>`;
     } else if (sel.length === 1) {
       html = this.entityInfo(sel[0]);
@@ -781,7 +788,13 @@ export class UI {
       case 'supply': return '<h5>Supply</h5><p>Infantry and aircraft need supply. HQ provides 12, each Logistics Hub +8.</p>';
       case 'compute': return '<h5>Compute</h5><p>Drones and robots need compute to run. HQ provides 6, each Data Center +8.</p>';
       case 'mines': return `<h5>Rare-earth mines: ${g.mines.refined} refined / ${g.mines.total} built</h5><p>Build Mines on rare-earth deposits. Ore only pays once refined: your HQ refines 1 mine, each Refinery 2 more (capacity now ${g.mines.capacity}). Each refined mine adds +4 credits/s. Far deposits need an Outpost nearby before you can build there.</p>`;
-      case 'research': return `<h5>Research program</h5><p>Breakthrough #${g.research.level + 1}: ${Math.floor(g.research.points)}/${Math.ceil(g.research.needed)}. Rate ${g.researchRate().toFixed(2)}/s plus kills. Labs speed it up. Each breakthrough lets you pick one of ${g.draftSize} random upgrades.</p>`;
+      case 'research': {
+        const luck = g.researchLuck(), odds = rarityOdds(luck);
+        const labs = g.buildings.filter((b) => b.team === TEAM_PLAYER && b.built && !b.dead && b.def.luck).length;
+        return `<h5>Research program</h5><p>Every wave you survive (all its attackers destroyed, or the next wave launches) gives one breakthrough: pick one of ${g.draftSize} random upgrades. Destroying enemy outposts and facilities gives extra ones.</p>` +
+          `<p>Research Labs raise the average rarity (each extra lab a bit less). Research luck <b>${luck.toFixed(1)}</b>${labs ? ` (${labs} lab${labs > 1 ? 's' : ''})` : ''}, average <b>${averageRarity(luck).toFixed(2)}</b> tiers above Common:</p>` +
+          `<div class="tt-odds">${odds.map((p, i) => `<span style="color:${RARITIES[i].color}">${RARITIES[i].name}</span><span>${(p * 100).toFixed(1)}%</span>`).join('')}</div>`;
+      }
       case 'wave': return `<h5>Enemy waves</h5><p>A new wave launches every ${WAVE.interval}s from the closest Forward Outpost (or their base). Destroy outposts to push the launch point back, and facilities to weaken waves.</p>${g.earlyWarning ? '<p>Early Warning shows the next wave\'s composition.</p>' : ''}`;
       case 'timeline': return '<h5>Timeline</h5><p>How many times you have looped, and how long this one has lasted.</p>';
       case 'pause': return '<h5>Pause <kbd>P</kbd></h5>';
@@ -807,6 +820,8 @@ export class UI {
     this.app.modal = true;
     $('modal-research').hidden = false;
     $('research-title').textContent = `BREAKTHROUGH #${g.research.picks.length + 1}`;
+    const odds = rarityOdds(g.researchLuck());
+    $('research-odds').innerHTML = 'Odds: ' + odds.map((p, i) => `<b style="color:${RARITIES[i].color}">${RARITIES[i].name} ${(p * 100).toFixed(p < 0.1 ? 1 : 0)}%</b>`).join(' · ');
     this.renderDraft();
     this.app.audio.play('research');
   }

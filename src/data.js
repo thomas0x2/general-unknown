@@ -274,8 +274,8 @@ export const BUILDINGS = {
   },
   lab: {
     name: 'Research Lab', w: 2, h: 2, hp: 700, cost: 250, time: 22, sight: 180, cat: 'base',
-    research: 0.35, shape: 'lab',
-    desc: 'AI-driven research cluster. Speeds up the research program.',
+    luck: 1.5, shape: 'lab',
+    desc: 'AI-driven research cluster. Raises the average rarity of research results (each extra lab adds a bit less).',
   },
   radar: {
     name: 'Radar Station', w: 2, h: 2, hp: 600, cost: 160, time: 14, sight: 620, cat: 'base',
@@ -299,8 +299,8 @@ export const BUILDINGS = {
   },
   cyberops: {
     name: 'Cyber Ops Center', w: 2, h: 2, hp: 800, cost: 320, time: 24, sight: 220, cat: 'base', shape: 'cyberops',
-    research: 0.2, cyber: { waveCut: 0.12, spoof: 0.3 },
-    desc: 'Offensive cyber unit hacking Hegemony logistics: each center (max 2) shrinks enemy waves by 12%, and 30% of their cruise missiles get spoofed off course. Boosts research.',
+    luck: 0.75, cyber: { waveCut: 0.12, spoof: 0.3 },
+    desc: 'Offensive cyber unit hacking Hegemony logistics: each center (max 2) shrinks enemy waves by 12%, and 30% of their cruise missiles get spoofed off course. Slightly raises research rarity.',
   },
   foundry: {
     name: 'Arms Foundry', w: 2, h: 2, hp: 900, cost: 300, time: 24, sight: 180, cat: 'base', income: 2, prodBonus: 0.12,
@@ -479,6 +479,7 @@ export const WAVE = {
   reinforceShare: 0.55, // fraction of a wave budget sent each time
 };
 
-export const RESEARCH = { base: 0.45, first: 80, growth: 1.3, killFactor: 0.025 };
+// Research: one breakthrough per wave. Rarity-raising buildings (labs) stack with diminishing returns.
+export const RESEARCH = { labFalloff: 0.75 };
 
 export const MINE_INCOME = 4; // credits/s per refined mine

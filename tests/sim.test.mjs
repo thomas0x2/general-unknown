@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Game } from '../src/game.js';
 import { defaultProfile, computeReward, metaNodesFor, loadMeta, getProfile, buyNode, defaultMeta, isFactionUnlocked, recordMilestones, unlockWatchList, unlockProgress } from '../src/meta.js';
 import { BUILDINGS, UNITS, TILE, TEAM_PLAYER, TEAM_ENEMY } from '../src/data.js';
-import { CARDS, RARITIES, makeDraft, cardAvailable } from '../src/upgrades.js';
+import { CARDS, RARITIES, makeDraft, cardAvailable, averageRarity } from '../src/upgrades.js';
 import { FACTIONS, FACTION_ORDER } from '../src/factions.js';
 import { mulberry32 } from '../src/rng.js';
 
@@ -56,6 +56,7 @@ function bot(g, rng, opts) {
   else if (g.mines.total >= g.mines.capacity && mine('refinery').length < 1 && g.credits >= g.costOf('refinery', true) + 20) tryPlace(g, 'refinery');
   else if (g.supplyCap - g.supplyUsed < 3 && g.credits >= 110 && mine('logistics').length < 6) tryPlace(g, 'logistics');
   else if (g.computeCap - g.computeUsed < 3 && g.credits >= 130 && mine('datacenter').length < 5) tryPlace(g, 'datacenter');
+  else if (g.available('lab') && mine('lab').length < Math.min(3, Math.floor(g.wave.n / 3)) && g.credits >= 300) tryPlace(g, 'lab');
   else if (mine('sentry').length < 2 + g.wave.n && g.credits >= 140) tryPlace(g, 'sentry');
   for (const t of [...prod, 'hq']) for (const b of mine(t)) {
     if (!b.built || b.queue.length >= 2 || g.credits < 100) continue;
@@ -158,6 +159,37 @@ test('drafts are distinct and respect faction and roster', () => {
       }
     }
   }
+});
+
+test('one research breakthrough per wave; labs raise the average rarity', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 91 });
+  const step = (s) => { for (let i = 0; i < 30 * s; i++) g.step(1 / 30); };
+  step(30);
+  assert.equal(g.research.ready, 0, 'no research before the first wave');
+  g.spawnWave();
+  assert.equal(g.research.ready, 0, 'a live wave does not count yet');
+  for (const u of g.units) if (u.team === TEAM_ENEMY && u.wave === 1 && !u.garrison) g.damage(u, 1e9, {});
+  step(2);
+  assert.equal(g.research.ready, 1, 'repelling wave 1 gives one breakthrough');
+  g.spawnWave();
+  assert.equal(g.research.ready, 1);
+  g.spawnWave(); // wave 2 is still alive when wave 3 launches: it counts as outlasted
+  assert.equal(g.research.ready, 2, 'outlasting a wave also counts');
+  step(1);
+  assert.equal(g.research.ready, 2, 'each wave counts only once');
+  // labs: higher luck, diminishing returns
+  g.unlocked.add(g.locks.lab);
+  g.credits = 99999;
+  const l0 = g.researchLuck();
+  const labs = [];
+  for (let k = 0; k < 3; k++) { assert.ok(tryPlace(g, 'lab')); labs.push(g.buildings[g.buildings.length - 1]); }
+  for (const b of labs) { b.built = true; b.progress = 1; }
+  const gains = [1, 2, 3].map((n) => { labs.forEach((b, i) => { b.built = i < n; }); return g.researchLuck() - l0; });
+  assert.ok(gains[0] > 0 && gains[1] - gains[0] < gains[0] && gains[2] - gains[1] < gains[1] - gains[0], `diminishing lab luck ${gains}`);
+  assert.ok(averageRarity(g.researchLuck()) > averageRarity(l0) + 0.2, 'labs raise the average rarity');
+  // a high-luck draft is rarer on average than a no-luck one
+  const rng = mulberry32(5), avg = (luck) => { let s = 0; for (let i = 0; i < 400; i++) s += makeDraft(rng, 1, luck, () => true)[0].rarity; return s / 400; };
+  assert.ok(avg(6) > avg(0) + 0.5);
 });
 
 test('commands: build, train, move, sell', () => {

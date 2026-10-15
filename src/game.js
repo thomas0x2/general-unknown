@@ -82,9 +82,10 @@ export class Game {
     this.escalation = escalation;
     this.over = null;
     this.mods = createMods();
-    this.research = { points: 0, level: 0, needed: RESEARCH.first, ready: 0, rerolls: 0, draft: null, picks: [] };
+    // one breakthrough per wave: `pending` holds launched waves that still have attackers alive
+    this.research = { level: 0, ready: 0, rerolls: 0, draft: null, picks: [], pending: [], checkT: 0 };
     this.unlocked = unlockedSet(profile, this.faction.id);
-    this.luck = 0; this.draftSize = 3; this.extraRifles = 0; this.chrononGain = 0;
+    this.luck = 0; this.bonusResearchEvery = 0; this.draftSize = 3; this.extraRifles = 0; this.chrononGain = 0;
     this.faction.passive(this);
     applyMeta(profile, this);
     this.ability = { ...this.faction.ability, cd: 30, activeUntil: 0 };
@@ -451,31 +452,48 @@ export class Game {
     this.stats.earned += gain;
   }
 
-  researchRate() {
-    let r = RESEARCH.base;
-    for (const b of this.buildings) if (b.team === TEAM_PLAYER && b.built && b.def.research) r += b.def.research;
-    return r * (1 + this.mods.research);
+  // Research luck shifts draft rarity upwards: Chrono Lab, cards, faction, plus labs. Each further
+  // rarity building counts for less (strongest first).
+  researchLuck() {
+    const vals = [];
+    for (const b of this.buildings) if (b.team === TEAM_PLAYER && b.built && !b.dead && b.def.luck) vals.push(b.def.luck);
+    vals.sort((a, b) => b - a);
+    let lab = 0;
+    vals.forEach((v, i) => { lab += v * Math.pow(RESEARCH.labFalloff, i); });
+    return this.luck + this.mods.luck + lab;
   }
 
-  addResearch(pts) {
+  // Award breakthroughs; `why` explains them in the notification.
+  grantResearch(n, why) {
     const R = this.research;
-    R.points += pts;
-    while (R.points >= R.needed) {
-      R.points -= R.needed;
-      R.level++;
-      R.ready++;
-      R.needed = RESEARCH.first * Math.pow(RESEARCH.growth, R.level);
-      this.notify('Research breakthrough ready — press Tab to choose an upgrade', 'good', null, 'research', 2);
-      this.sfx('research');
-    }
+    R.ready += n;
+    R.level += n;
+    this.notify(`${why} — ${n > 1 ? `${n} research breakthroughs` : 'research breakthrough'} ready (Tab)`, 'good', null, 'research', 2);
+    this.sfx('research');
   }
 
-  updateResearch(dt) { this.addResearch(this.researchRate() * dt); }
+  // A wave counts once it is repelled (no attacker of it left) or outlasted (the next wave launches).
+  waveSurvived(n, how) {
+    const R = this.research;
+    R.pending = R.pending.filter((w) => w !== n);
+    R.waves = (R.waves || 0) + 1;
+    const bonus = this.bonusResearchEvery && R.waves % this.bonusResearchEvery === 0 ? 1 : 0;
+    this.grantResearch(1 + bonus, `Wave ${n} ${how}${bonus ? ' (+1 Accelerated Research)' : ''}`);
+  }
+
+  updateResearch(dt) {
+    const R = this.research;
+    if (!R.pending.length || (R.checkT -= dt) > 0) return;
+    R.checkT = 0.5;
+    const alive = new Set();
+    for (const u of this.units) if (!u.dead && u.team === TEAM_ENEMY && !u.garrison && u.wave) alive.add(u.wave);
+    for (const n of [...R.pending]) if (!alive.has(n)) this.waveSurvived(n, 'repelled');
+  }
 
   openDraft() {
     const R = this.research;
     if (R.draft || R.ready <= 0) return R.draft;
-    R.draft = makeDraft(this.rng, this.draftSize, this.luck, (c) => cardAvailable(c, this));
+    R.draft = makeDraft(this.rng, this.draftSize, this.researchLuck(), (c) => cardAvailable(c, this));
     return R.draft;
   }
 
@@ -483,7 +501,7 @@ export class Game {
     const R = this.research;
     if (!R.draft || R.rerolls <= 0) return;
     R.rerolls--;
-    R.draft = makeDraft(this.rng, this.draftSize, this.luck, (c) => cardAvailable(c, this));
+    R.draft = makeDraft(this.rng, this.draftSize, this.researchLuck(), (c) => cardAvailable(c, this));
   }
 
   pickDraft(i) {
@@ -1137,7 +1155,6 @@ export class Game {
       this.releaseSlot(e);
       if (e.team === TEAM_ENEMY) {
         this.stats.kills++;
-        this.addResearch(e.def.cost * RESEARCH.killFactor * (1 + this.mods.research));
         if (this.mods.bounty > 0) {
           const c = e.def.cost * this.mods.bounty;
           this.credits += c;
@@ -1166,14 +1183,14 @@ export class Game {
     }
     if (def.outpost) {
       this.stats.outposts++;
-      this.addResearch(this.research.needed * 0.5);
       this.credits += 300;
-      this.notify('Forward outpost destroyed! +300 credits, research boost. Enemy waves must now travel further.', 'good', { x: e.x, y: e.y });
+      this.notify('Forward outpost destroyed! +300 credits. Enemy waves must now travel further.', 'good', { x: e.x, y: e.y });
+      this.grantResearch(1, 'Outpost intel captured');
       return;
     }
     if (def.share > 0 || def.enables) {
       this.stats.facilities++;
-      this.addResearch(this.research.needed * 0.6);
+      this.grantResearch(1, 'Facility data captured');
       this.credits += 400;
       const why = {
         ebarracks: 'Enemy infantry production halted.',
@@ -1457,8 +1474,8 @@ export class Game {
         this.notify(`Supply cache recovered: +${amt} credits`, 'good', c);
         this.fx({ type: 'text', x: c.x, y: c.y, text: `+${amt}`, life: 1.5, color: '#ffd76a' });
       } else if (r < 0.85) {
-        this.addResearch(this.research.needed * 0.35);
-        this.notify('Prototype data recovered: research boosted', 'good', c);
+        this.mods.luck += 0.5;
+        this.notify('Prototype data recovered: research luck +0.5', 'good', c);
         this.fx({ type: 'text', x: c.x, y: c.y, text: 'DATA', life: 1.5, color: '#7fd1ff' });
       } else {
         const targets = this.buildings.filter((b) => b.team === TEAM_ENEMY && !b.discovered && (b.def.share > 0 || b.def.enables || b.def.outpost || b.type === 'cc'));
@@ -1572,6 +1589,8 @@ export class Game {
   }
 
   spawnWave() {
+    // surviving until the next launch counts as surviving the earlier waves
+    for (const w of [...this.research.pending]) this.waveSurvived(w, 'outlasted');
     const n = ++this.wave.n;
     const { comp, count } = this.waveComposition(n);
     const sp = this.waveSpawnPoint();
@@ -1600,6 +1619,8 @@ export class Game {
         }
     }
     this.wave.lastSpawn = { x: sp.x, y: sp.y, n, count, comp };
+    this.research.pending.push(n);
+    this.research.checkT = 1;
     const dir = this.directionName(sp);
     const known = this.earlyWarning || this.explored[this.tileIdx(sp.x, sp.y)];
     this.notify(count ? `Wave ${n} inbound${known ? ` from the ${dir}` : ''} — ${count} hostiles` : `Wave ${n}: the enemy has nothing left to send`, count ? 'danger' : 'good', known ? sp : null);
