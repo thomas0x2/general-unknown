@@ -1,40 +1,19 @@
 // Permanent progression between timelines ("Chrono Lab") + persistence.
 import { addMod } from './upgrades.js';
 import { randomSeed } from './rng.js';
+import { FACTIONS } from './factions.js';
 
-const SAVE_KEY = 'general-unknown-meta-v1';
+const SAVE_KEY = 'general-unknown-meta-v2';
+const OLD_SAVE_KEY = 'general-unknown-meta-v1';
 
 export const BRANCHES = [
-  { id: 'arsenal', name: 'Arsenal', desc: 'Blueprints carried back through time. Unlock new troops, robots, drones and structures.' },
+  { id: 'arsenal', name: 'Arsenal', desc: 'Blueprints carried back through time. Unlock this faction\'s troops, machines and structures.' },
   { id: 'doctrine', name: 'Doctrine', desc: 'Permanent military reforms. Stack them across timelines.' },
   { id: 'temporal', name: 'Temporal', desc: 'Exploit the time machine itself: research, intel and memory.' },
 ];
 
-// cost: array of per-level costs (length = max level)
-export const META_NODES = [
-  // ---- Arsenal: infantry
-  { id: 'manpads', branch: 'arsenal', group: 'Infantry', name: 'MANPADS Team', desc: 'Unlock anti-air missile infantry.', cost: [30] },
-  { id: 'sniper', branch: 'arsenal', group: 'Infantry', name: 'Ghost Recon', desc: 'Unlock long-range recon snipers.', cost: [55], req: ['manpads'] },
-  { id: 'exo', branch: 'arsenal', group: 'Infantry', name: 'Exo-Troopers', desc: 'Unlock powered-exoskeleton heavy infantry.', cost: [140], req: ['sniper'] },
-  // ---- Arsenal: robots
-  { id: 'robotics', branch: 'arsenal', group: 'Robots', name: 'Robotics Bay', desc: 'Unlock the Robotics Bay and Guard Dog quadrupeds.', cost: [60] },
-  { id: 'mule', branch: 'arsenal', group: 'Robots', name: 'Mule UGV', desc: 'Unlock autonomous autocannon ground vehicles.', cost: [90], req: ['robotics'] },
-  { id: 'aegis', branch: 'arsenal', group: 'Robots', name: 'Aegis Rover', desc: 'Unlock mobile laser point-defense rovers.', cost: [110], req: ['mule'] },
-  { id: 'titan', branch: 'arsenal', group: 'Robots', name: 'Titan Mech', desc: 'Unlock heavy bipedal assault mechs.', cost: [240], req: ['mule'] },
-  // ---- Arsenal: drones
-  { id: 'fpv', branch: 'arsenal', group: 'Drones', name: 'FPV Kamikazes', desc: 'Unlock cheap one-way attack drones.', cost: [30] },
-  { id: 'harpy', branch: 'arsenal', group: 'Drones', name: 'Harpy Strike Drone', desc: 'Unlock missile-armed loitering drones.', cost: [110], req: ['fpv'] },
-  { id: 'hive', branch: 'arsenal', group: 'Drones', name: 'Hive Carrier', desc: 'Unlock the FPV-launching drone mothership.', cost: [220], req: ['harpy'] },
-  // ---- Arsenal: structures
-  { id: 'bunker', branch: 'arsenal', group: 'Structures', name: 'Bunker', desc: 'Unlock heavily armored autocannon bunkers.', cost: [35] },
-  { id: 'ciws', branch: 'arsenal', group: 'Structures', name: 'Laser CIWS', desc: 'Unlock anti-air / anti-missile laser turrets.', cost: [55] },
-  { id: 'interceptor', branch: 'arsenal', group: 'Structures', name: 'Interceptor Array', desc: 'Unlock long-range missile defense.', cost: [100], req: ['ciws'] },
-  { id: 'jammer', branch: 'arsenal', group: 'Structures', name: 'EW Jammer', desc: 'Unlock electronic warfare against drones and missiles.', cost: [80], req: ['ciws'] },
-  { id: 'radar', branch: 'arsenal', group: 'Structures', name: 'Radar Station', desc: 'Unlock wide-area radar coverage.', cost: [45] },
-  { id: 'lab', branch: 'arsenal', group: 'Structures', name: 'Research Lab', desc: 'Unlock labs that accelerate the research program.', cost: [65] },
-  { id: 'repair', branch: 'arsenal', group: 'Structures', name: 'Nanite Repair Bay', desc: 'Unlock area repair for units and buildings.', cost: [100], req: ['lab'] },
-  { id: 'battery', branch: 'arsenal', group: 'Structures', name: 'Missile Battery', desc: 'Unlock long-range guided missile launchers.', cost: [120], req: ['radar'] },
-  { id: 'railgun', branch: 'arsenal', group: 'Structures', name: 'Railgun', desc: 'Unlock hypersonic electromagnetic railguns.', cost: [280], req: ['battery'] },
+// Doctrine and temporal nodes shared by every faction. cost: per-level costs (length = max level).
+const SHARED_NODES = [
   // ---- Doctrine
   { id: 'd_hp', branch: 'doctrine', name: 'Body Armor Program', desc: '+5% HP for all units per level.', cost: [20, 35, 55, 80, 110] },
   { id: 'd_dmg', branch: 'doctrine', name: 'Munitions Program', desc: '+5% damage for all units per level.', cost: [20, 35, 55, 80, 110] },
@@ -56,11 +35,29 @@ export const META_NODES = [
   { id: 't_recon', branch: 'temporal', name: 'Temporal Recon', desc: 'Start every timeline knowing where the enemy base and outposts are.', cost: [60], req: ['t_memory'] },
 ];
 
-export const NODE_BY_ID = Object.fromEntries(META_NODES.map((n) => [n.id, n]));
+const nodeCache = new Map();
+// Full Chrono Lab tree for one faction: its arsenal, its two faction doctrines, then the shared nodes.
+export function metaNodesFor(fid) {
+  let list = nodeCache.get(fid);
+  if (list) return list;
+  const f = FACTIONS[fid];
+  list = [
+    ...f.arsenal.map((n) => ({ ...n, branch: 'arsenal' })),
+    {
+      id: 'f_ability', branch: 'doctrine', name: `${f.ability.name} Protocol`, faction: true,
+      desc: `${f.ability.name}: 12% faster recharge and +15% power per level.`, cost: [30, 60, 100],
+    },
+    { id: 'f_special', branch: 'doctrine', name: f.special.name, desc: f.special.desc, cost: f.special.cost, faction: true },
+    ...SHARED_NODES,
+  ];
+  nodeCache.set(fid, list);
+  return list;
+}
 
-export function defaultMeta() {
+export function nodeById(fid, id) { return metaNodesFor(fid).find((n) => n.id === id); }
+
+export function defaultProfile() {
   return {
-    version: 1,
     chronons: 0,
     lifetime: 0,
     runs: 0,
@@ -73,57 +70,78 @@ export function defaultMeta() {
     seed: randomSeed(),
     memory: '',
     history: [],
-    seenIntro: false,
   };
+}
+
+export function defaultMeta() {
+  return { version: 2, seenIntro: false, faction: null, profiles: {} };
+}
+
+// Each faction has its own save profile (chronons, unlocks, records, map memory).
+export function getProfile(meta, fid) {
+  if (!meta.profiles[fid]) meta.profiles[fid] = defaultProfile();
+  return meta.profiles[fid];
 }
 
 export function loadMeta() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return defaultMeta();
-    return { ...defaultMeta(), ...JSON.parse(raw) };
-  } catch {
-    return defaultMeta();
-  }
+    if (raw) {
+      const m = { ...defaultMeta(), ...JSON.parse(raw) };
+      for (const k of Object.keys(m.profiles)) m.profiles[k] = { ...defaultProfile(), ...m.profiles[k] };
+      return m;
+    }
+    // migrate a pre-faction save into the Valdaran profile
+    const old = localStorage.getItem(OLD_SAVE_KEY);
+    if (old) {
+      const o = JSON.parse(old);
+      const m = defaultMeta();
+      m.seenIntro = !!o.seenIntro;
+      const p = defaultProfile();
+      for (const k of Object.keys(p)) if (o[k] !== undefined) p[k] = o[k];
+      m.profiles.valdara = p;
+      m.faction = 'valdara';
+      return m;
+    }
+  } catch { /* corrupt or unavailable storage: start fresh */ }
+  return defaultMeta();
 }
 
 export function saveMeta(meta) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(meta)); } catch { /* storage unavailable */ }
 }
 
-export function resetMeta() {
-  try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
-  return defaultMeta();
-}
+export const level = (profile, id) => profile.levels[id] || 0;
 
-export const level = (meta, id) => meta.levels[id] || 0;
-
-export function nodeCost(meta, node) {
-  const lv = level(meta, node.id);
+export function nodeCost(profile, node) {
+  const lv = level(profile, node.id);
   return lv < node.cost.length ? node.cost[lv] : null;
 }
 
-export function nodeAvailable(meta, node) {
-  return !node.req || node.req.every((r) => level(meta, r) > 0);
+export function nodeAvailable(profile, node) {
+  return !node.req || node.req.every((r) => level(profile, r) > 0);
 }
 
-export function buyNode(meta, id) {
-  const node = NODE_BY_ID[id];
-  const cost = nodeCost(meta, node);
-  if (cost == null || meta.chronons < cost || !nodeAvailable(meta, node)) return false;
-  meta.chronons -= cost;
-  meta.levels[id] = level(meta, id) + 1;
+export function buyNode(meta, fid, id) {
+  const profile = getProfile(meta, fid);
+  const node = nodeById(fid, id);
+  if (!node) return false;
+  const cost = nodeCost(profile, node);
+  if (cost == null || profile.chronons < cost || !nodeAvailable(profile, node)) return false;
+  profile.chronons -= cost;
+  profile.levels[id] = level(profile, id) + 1;
   saveMeta(meta);
   return true;
 }
 
-export function unlockedSet(meta) {
-  return new Set(META_NODES.filter((n) => n.branch === 'arsenal' && level(meta, n.id) > 0).map((n) => n.id));
+// Arsenal node ids this profile has bought.
+export function unlockedSet(profile, fid) {
+  return new Set(FACTIONS[fid].arsenal.filter((n) => level(profile, n.id) > 0).map((n) => n.id));
 }
 
 // Apply permanent doctrine/temporal bonuses to a new game.
-export function applyMeta(meta, game) {
-  const L = (id) => level(meta, id);
+export function applyMeta(profile, game) {
+  const L = (id) => level(profile, id);
   const m = game.mods;
   addMod(m, 'hp', 'unit', 0.05 * L('d_hp'));
   addMod(m, 'dmg', 'unit', 0.05 * L('d_dmg'));
@@ -133,11 +151,14 @@ export function applyMeta(meta, game) {
   addMod(m, 'build', 'all', 0.08 * L('d_build'));
   m.supply += 4 * L('d_supply');
   m.research += 0.12 * L('t_research');
+  m.abilityCd += 0.12 * L('f_ability');
+  m.abilityPower += 0.15 * L('f_ability');
+  if (L('f_special')) game.faction.special.apply(game, L('f_special'));
   game.credits += 150 * L('d_credits');
   game.extraRifles = 2 * L('d_garrison');
   game.luck = L('t_luck');
   game.draftSize = 3 + L('t_choice');
-  game.research.rerolls = L('t_reroll');
+  game.research.rerolls += L('t_reroll');
   game.research.ready += L('t_head');
   game.chrononGain = 0.15 * L('t_gain');
   game.earlyWarning = L('t_warning') > 0;

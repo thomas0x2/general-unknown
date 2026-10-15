@@ -47,6 +47,15 @@
     <aside id="buildpanel"></aside>
     <footer id="bottombar">
       <div id="minimap-wrap"><canvas id="minimap"></canvas></div>
+      <div id="ability-wrap">
+        <button id="btn-ability" class="ability" data-tip="ability">
+          <span class="ab-fill" id="t-abfill"></span>
+          <span class="ab-kicker">COMMANDER</span>
+          <span class="ab-label" id="t-ability">ABILITY</span>
+          <span class="ab-cd" id="t-abcd"></span>
+          <kbd>G</kbd>
+        </button>
+      </div>
       <div id="selinfo"></div>
       <div id="cmdcard"></div>
     </footer>
@@ -75,19 +84,36 @@
     </div>
   </section>
 
+  <section id="screen-factions" class="screen" hidden>
+    <div class="fac-wrap">
+      <header class="lab-head">
+        <div>
+          <div class="kicker">PROJECT LOOKING GLASS · ALLIED NATIONS</div>
+          <h2>CHOOSE YOUR FACTION</h2>
+        </div>
+        <button id="btn-fac-back" class="link">‹ title</button>
+      </header>
+      <p class="fac-note">Six small nations face the same Hegemony invasion. Each has its own doctrine, arsenal and commander ability, and keeps its own timeline: separate chronons, Chrono Lab unlocks and records.</p>
+      <div id="fac-grid" class="fac-grid"></div>
+    </div>
+  </section>
+
   <section id="screen-lab" class="screen" hidden>
     <div class="lab-wrap">
       <header class="lab-head">
-        <div>
-          <div class="kicker">PROJECT LOOKING GLASS</div>
-          <h2>CHRONO LAB</h2>
+        <div class="lab-title">
+          <img id="lab-emblem" class="emblem" alt="">
+          <div>
+            <div class="kicker" id="lab-kicker">PROJECT LOOKING GLASS</div>
+            <h2>CHRONO LAB</h2>
+          </div>
         </div>
         <div class="lab-chronons"><span class="ico ico-chronon"></span><b id="lab-chronons">0</b><small>CHRONONS</small></div>
       </header>
       <div id="lab-stats" class="lab-stats"></div>
       <div id="lab-branches" class="lab-branches"></div>
       <footer class="lab-foot">
-        <button id="btn-lab-back" class="link">‹ title</button>
+        <button id="btn-lab-back" class="link">‹ change faction</button>
         <label class="check" data-tip="newmap"><input type="checkbox" id="chk-newmap"> Divergent timeline (new map)</label>
         <label id="esc-wrap" class="check" hidden data-tip="escalation">Escalation <select id="sel-esc"></select></label>
         <button id="btn-begin" class="big">BEGIN TIMELINE</button>

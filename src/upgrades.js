@@ -11,10 +11,10 @@ export const RARITIES = [
 
 // Stats that are summed as percentages per tag. Tags: all, unit, building, defense,
 // infantry, robot, drone, hq, or a specific unit/building id.
-const STATS = ['hp', 'dmg', 'range', 'rate', 'speed', 'sight', 'build', 'cost', 'regen', 'dr', 'splash', 'intercept'];
+const STATS = ['hp', 'dmg', 'range', 'rate', 'speed', 'sight', 'build', 'cost', 'regen', 'dr', 'splash', 'intercept', 'hack', 'stun'];
 
 export function createMods() {
-  const m = { income: 0, research: 0, supply: 0, bounty: 0, flags: {} };
+  const m = { income: 0, research: 0, supply: 0, bounty: 0, abilityCd: 0, abilityPower: 0, flags: {} };
   for (const s of STATS) m[s] = {};
   return m;
 }
@@ -49,7 +49,9 @@ function fmtVal([stat, , v], mult) {
   return pct(v * mult);
 }
 
-const has = (...ids) => (u) => ids.some((id) => u.has(id));
+// Card requirements receive the game: available(id) = in this faction's roster and unlocked.
+const has = (...ids) => (g) => ids.some((id) => g.available(id));
+const hasClass = (cls) => (g) => g.hasClass(cls);
 
 export const CARDS = [
   statCard('composites', 'Advanced Composites', 'All Units', [['hp', 'unit', 0.06]], 'All units +{0} max HP.'),
@@ -63,13 +65,13 @@ export const CARDS = [
   statCard('neural_link', 'Neural Link HUD', 'Infantry', [['dmg', 'infantry', 0.08]], 'Infantry +{0} damage.'),
   statCard('stims', 'Combat Stims', 'Infantry', [['speed', 'infantry', 0.06], ['rate', 'infantry', 0.05]], 'Infantry +{0} speed, +{1} fire rate.'),
   statCard('field_medic', 'Medical AI', 'Infantry', [['regen', 'infantry', 0.003]], 'Infantry regenerate {0} HP per second.', { minRarity: 1 }),
-  statCard('tandem', 'Tandem Warheads', 'Infantry', [['dmg', 'at_team', 0.1], ['dmg', 'manpads', 0.1]], 'AT and MANPADS teams +{0} damage.'),
+  statCard('tandem', 'Tandem Warheads', 'Infantry', [['dmg', 'at_team', 0.1], ['dmg', 'manpads', 0.1]], 'AT and MANPADS teams +{0} damage.', { req: has('at_team', 'manpads') }),
   statCard('marksman', 'Ballistic Computers', 'Infantry', [['dmg', 'sniper', 0.12], ['range', 'sniper', 0.04]], 'Ghost Recon +{0} damage, +{1} range.', { req: has('sniper') }),
-  statCard('graphene', 'Graphene Armor', 'Robots', [['hp', 'robot', 0.1]], 'Robots +{0} max HP.', { req: has('robotics') }),
-  statCard('servos', 'Overclocked Servos', 'Robots', [['speed', 'robot', 0.07], ['rate', 'robot', 0.06]], 'Robots +{0} speed, +{1} fire rate.', { req: has('robotics') }),
-  statCard('nanites', 'Self-Repair Nanites', 'Robots', [['regen', 'robot', 0.004]], 'Robots regenerate {0} HP per second.', { req: has('robotics') }),
+  statCard('graphene', 'Graphene Armor', 'Robots', [['hp', 'robot', 0.1]], 'Robots +{0} max HP.', { req: hasClass('robot') }),
+  statCard('servos', 'Overclocked Servos', 'Robots', [['speed', 'robot', 0.07], ['rate', 'robot', 0.06]], 'Robots +{0} speed, +{1} fire rate.', { req: hasClass('robot') }),
+  statCard('nanites', 'Self-Repair Nanites', 'Robots', [['regen', 'robot', 0.004]], 'Robots regenerate {0} HP per second.', { req: hasClass('robot') }),
   statCard('batteries', 'Solid-State Batteries', 'Drones', [['speed', 'drone', 0.08], ['hp', 'drone', 0.06]], 'Drones +{0} speed, +{1} max HP.'),
-  statCard('swarm_ai', 'Swarm Intelligence', 'Drones', [['dmg', 'drone', 0.09]], 'Drones +{0} damage.', { req: has('fpv') }),
+  statCard('swarm_ai', 'Swarm Intelligence', 'Drones', [['dmg', 'drone', 0.09]], 'Drones +{0} damage.', { req: has('fpv', 'wasp', 'stinger', 'bomber', 'empdrone', 'harpy') }),
   statCard('drone_print', 'Rapid Drone Printing', 'Drones', [['build', 'drone', 0.12], ['cost', 'drone', 0.05]], 'Drones build {0} faster and cost {1} less.'),
   statCard('hardened', 'Hardened Structures', 'Buildings', [['hp', 'building', 0.1]], 'Buildings +{0} max HP.'),
   statCard('loaders', 'Rapid Autoloaders', 'Defenses', [['rate', 'defense', 0.07], ['rate', 'hq', 0.07]], 'Defenses and HQ +{0} fire rate.'),
@@ -93,6 +95,43 @@ export const CARDS = [
     text: (m) => `Gain ${Math.round(25 * m)}% of a research level immediately.`,
     apply: (game, m) => { game.research.points += game.research.needed * 0.25 * m; },
   },
+  statCard('aero', 'Aerospace Composites', 'Aircraft', [['hp', 'aircraft', 0.08], ['speed', 'aircraft', 0.05]], 'Aircraft +{0} max HP, +{1} speed.', { req: hasClass('aircraft') }),
+  {
+    id: 'command_net', name: 'Command Network', tag: 'Ability',
+    text: (m) => `Commander ability recharges ${Math.round(8 * m)}% faster and is ${Math.round(10 * m)}% stronger.`,
+    apply: (g, m) => { g.mods.abilityCd += 0.08 * m; g.mods.abilityPower += 0.1 * m; },
+  },
+  // ---- Faction cards (only offered to that faction, and more often) ----
+  statCard('joint_ops', 'Joint Operations', 'Valdara', [['hp', 'unit', 0.04], ['dmg', 'unit', 0.04]], 'All units +{0} HP and +{1} damage.', { faction: 'valdara' }),
+  {
+    id: 'fire_mission', name: 'Fire Mission Grid', tag: 'Valdara', faction: 'valdara',
+    text: (m) => `Artillery Barrage +${Math.round(20 * m)}% damage and recharges ${Math.round(5 * m)}% faster.`,
+    apply: (g, m) => { g.mods.abilityPower += 0.2 * m; g.mods.abilityCd += 0.05 * m; },
+  },
+  statCard('drill', 'Drill Sergeants', 'Iron Guard', [['build', 'infantry', 0.12], ['cost', 'infantry', 0.03]], 'Infantry trains {0} faster and costs {1} less.', { faction: 'ironguard' }),
+  statCard('entrench', 'Entrenchment Doctrine', 'Iron Guard', [['dr', 'infantry', 0.04]], 'Infantry takes {0} less damage.', { faction: 'ironguard', minRarity: 1 }),
+  statCard('bayonet', 'Assault Doctrine', 'Iron Guard', [['dmg', 'shock', 0.12], ['dmg', 'grenadier', 0.12]], 'Shock Troopers and Grenadiers +{0} damage.', { faction: 'ironguard' }),
+  statCard('firing_tables', 'Ballistic Firing Tables', 'Iron Guard', [['range', 'mortar', 0.06], ['splash', 'all', 0.06]], 'Mortar range +{0}, splash radius +{1}.', { faction: 'ironguard', req: has('mortar') }),
+  statCard('swarm_link', 'Mesh Network Link', 'Swarm', [['dmg', 'drone', 0.06], ['hp', 'drone', 0.06]], 'Drones +{0} damage and +{1} HP.', { faction: 'swarm' }),
+  statCard('cheap_frames', 'Injection-Molded Frames', 'Swarm', [['cost', 'drone', 0.04]], 'Drones cost {0} less.', { faction: 'swarm' }),
+  {
+    id: 'hive_queen', name: 'Hive Queens', tag: 'Swarm', faction: 'swarm', req: has('swarmhive'),
+    text: (m) => `Swarm Hives print drones ${Math.round(15 * m)}% faster.`,
+    apply: (g, m) => { g.mods.flags.hiveRate = (g.mods.flags.hiveRate || 0) + 0.15 * m; },
+  },
+  statCard('zero_day', 'Zero-Day Exploits', 'Ghostnet', [['hack', 'all', 0.2]], 'Hacking speed +{0}.', { faction: 'ghostnet' }),
+  statCard('emp_harden', 'Pulse Amplifiers', 'Ghostnet', [['stun', 'all', 0.15]], 'Stun durations +{0}.', { faction: 'ghostnet' }),
+  statCard('signal_intel', 'Signals Intelligence', 'Ghostnet', [['research', '', 0.1], ['sight', 'all', 0.05]], 'Research +{0}, sight +{1}.', { faction: 'ghostnet' }),
+  statCard('lean_mfg', 'Lean Manufacturing', 'Forge', [['build', 'all', 0.08], ['cost', 'building', 0.03]], 'Production +{0} faster, buildings {1} cheaper.', { faction: 'forge' }),
+  statCard('alloys', 'Reinforced Alloys', 'Forge', [['hp', 'robot', 0.08], ['hp', 'building', 0.08]], 'Robots +{0} HP, buildings +{1} HP.', { faction: 'forge' }),
+  {
+    id: 'overtime', name: 'Mandatory Overtime', tag: 'Forge', faction: 'forge',
+    text: (m) => `Overdrive lasts ${Math.round(20 * m)}% longer and recharges ${Math.round(5 * m)}% faster.`,
+    apply: (g, m) => { g.mods.abilityPower += 0.2 * m; g.mods.abilityCd += 0.05 * m; },
+  },
+  statCard('avionics', 'Fire-Control Avionics', 'Sky Republic', [['range', 'aircraft', 0.05], ['dmg', 'aircraft', 0.06]], 'Aircraft +{0} range, +{1} damage.', { faction: 'skyrep' }),
+  statCard('afterburners', 'Adaptive Engines', 'Sky Republic', [['speed', 'aircraft', 0.08], ['rate', 'aircraft', 0.05]], 'Aircraft +{0} speed, +{1} fire rate.', { faction: 'skyrep' }),
+  statCard('rotor_comp', 'Composite Airframes', 'Sky Republic', [['hp', 'aircraft', 0.1]], 'Aircraft +{0} max HP.', { faction: 'skyrep' }),
   // ---- Unique epics / legendaries (fixed effect) ----
   {
     id: 'conscription', name: 'Total Mobilization', tag: 'Infantry', minRarity: 3, maxRarity: 3,
@@ -120,7 +159,7 @@ export const CARDS = [
     apply: (g) => { addMod(g.mods, 'hp', 'hq', 0.6); addMod(g.mods, 'regen', 'hq', 0.012); },
   },
   {
-    id: 'hive_mind', name: 'Hive Mind', tag: 'Drones', minRarity: 4,
+    id: 'hive_mind', name: 'Hive Mind', tag: 'Drones', minRarity: 4, req: hasClass('drone'),
     text: () => 'All drones +35% HP, damage and speed.',
     apply: (g) => { for (const s of ['hp', 'dmg', 'speed']) addMod(g.mods, s, 'drone', 0.35); },
   },
@@ -148,8 +187,9 @@ function rollRarity(rng, luck) {
   return weightedPick(rng, items, (x) => x.w).i;
 }
 
-// Build a draft of `count` distinct cards. unlocked = Set of meta unlock ids.
-export function makeDraft(rng, count, luck, unlocked) {
+// Build a draft of `count` distinct cards. avail(card) decides whether a card fits this game.
+// Faction cards are weighted up so a faction's identity shows in its drafts.
+export function makeDraft(rng, count, luck, avail) {
   const out = [];
   const used = new Set();
   let guard = 0;
@@ -159,11 +199,9 @@ export function makeDraft(rng, count, luck, unlocked) {
       !used.has(c.id) &&
       (c.minRarity ?? 0) <= r &&
       (c.maxRarity ?? 4) >= r &&
-      (!c.req || c.req(unlocked)) &&
-      // uniques only appear at their own tier
-      !(c.minRarity >= 3 && r < c.minRarity));
+      avail(c));
     if (!pool.length) continue;
-    const card = pool[Math.floor(rng() * pool.length)];
+    const card = weightedPick(rng, pool, (c) => (c.faction ? 3 : 1));
     used.add(card.id);
     out.push({ id: card.id, rarity: r });
   }
@@ -174,4 +212,10 @@ export function describeCard(pick) {
   const card = CARD_BY_ID[pick.id];
   const rar = RARITIES[pick.rarity];
   return { card, rarity: rar, text: card.text(rar.mult) };
+}
+
+// Standard availability check used by the game.
+export function cardAvailable(card, game) {
+  if (card.faction && card.faction !== game.faction.id) return false;
+  return !card.req || card.req(game);
 }

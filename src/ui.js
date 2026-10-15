@@ -2,8 +2,9 @@
 import {
   UNITS, BUILDINGS, BUILD_ORDER, ARMOR_NAMES, WAVE, TEAM_PLAYER, TEAM_ENEMY, ENEMY_UNITS,
 } from './data.js';
-import { iconFor } from './shapes.js';
-import { META_NODES, BRANCHES, NODE_BY_ID, level, nodeCost, nodeAvailable, buyNode } from './meta.js';
+import { iconFor, emblemFor } from './shapes.js';
+import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode } from './meta.js';
+import { FACTIONS, FACTION_ORDER } from './factions.js';
 import { describeCard } from './upgrades.js';
 
 const $ = (id) => document.getElementById(id);
@@ -15,14 +16,12 @@ export const fmtTime = (s) => {
 const CARD_KEYS = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
 const TARGETS = { ground: 'Ground', air: 'Air', both: 'Ground + Air' };
 
-const NODE_ICON = {
-  manpads: ['unit', UNITS.manpads], sniper: ['unit', UNITS.sniper], exo: ['unit', UNITS.exo],
-  robotics: ['unit', UNITS.dog], mule: ['unit', UNITS.mule], aegis: ['unit', UNITS.aegis], titan: ['unit', UNITS.titan],
-  fpv: ['unit', UNITS.fpv], harpy: ['unit', UNITS.harpy], hive: ['unit', UNITS.hive],
-  bunker: ['b', BUILDINGS.bunker], ciws: ['b', BUILDINGS.ciws], interceptor: ['b', BUILDINGS.interceptor],
-  jammer: ['b', BUILDINGS.jammer], radar: ['b', BUILDINGS.radar], lab: ['b', BUILDINGS.lab], repair: ['b', BUILDINGS.repair],
-  battery: ['b', BUILDINGS.battery], railgun: ['b', BUILDINGS.railgun],
-};
+// Icon for a Chrono Lab node: the first unit or structure it unlocks.
+function nodeIcon(n) {
+  const id = n.unlocks?.[0];
+  if (!id) return null;
+  return UNITS[id] ? ['unit', UNITS[id]] : ['building', BUILDINGS[id]];
+}
 
 const INTRO = `14 MARCH 2034 — 03:58 LOCAL
 
@@ -45,6 +44,8 @@ const MANUAL = `
 <div class="kicker">FIELD MANUAL</div>
 <h2>GENERAL UNKNOWN</h2>
 <p>You command the military of a small nation against the overwhelming forces of the Hegemony. Waves of enemy troops, armor and drones will come for your <b>Command HQ</b>. When it falls, the timeline collapses — and the time machine sends you back to the start, with <b>Chronons</b> to spend in the Chrono Lab on permanent upgrades.</p>
+<h3>Factions</h3>
+<p>Six allied nations can hold the line, each with its own doctrine, units, structures, research cards and commander ability, and each keeps its own save: chronons and Chrono Lab unlocks are earned per faction. Valdara fights with combined arms; Iron Guard drowns the enemy in infantry; the Swarm Collective fields cheap drones by the hundred; Ghostnet hacks and stuns the Hegemony's machines and steals them; the Forge Union outbuilds everyone; the Sky Republic rules the air.</p>
 <h3>Objectives</h3>
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
@@ -65,6 +66,7 @@ const MANUAL = `
 <tr><td>Arrows / screen edge / middle drag</td><td>Pan the camera. Mouse wheel zooms. Click the minimap to jump.</td></tr>
 <tr><td>Space</td><td>Jump to the latest alert (or your HQ).</td></tr>
 <tr><td>T</td><td>Open the research program.</td></tr>
+<tr><td>G</td><td>Commander ability (then click a scouted target if it needs one).</td></tr>
 <tr><td>P / Esc</td><td>Pause / command menu. <kbd>+</kbd> <kbd>-</kbd> change game speed, <kbd>M</kbd> mutes.</td></tr>
 </table>
 <h3>Combat notes</h3>
@@ -96,14 +98,26 @@ export class UI {
 
   get game() { return this.app.game; }
   get meta() { return this.app.meta; }
+  get faction() { return FACTIONS[this.app.factionId]; }
+  get profile() { return getProfile(this.meta, this.app.factionId); }
 
   // ---------------------------------------------------------------- binding
   bind() {
-    $('btn-play').onclick = () => { this.app.audio.ensure(); this.click(); this.meta.seenIntro ? this.showLab() : this.showIntro(); };
+    $('btn-play').onclick = () => { this.app.audio.ensure(); this.click(); this.meta.seenIntro ? this.showFactions() : this.showIntro(); };
     $('btn-manual').onclick = () => this.showInfo(MANUAL);
-    $('btn-intro-go').onclick = () => { this.meta.seenIntro = true; this.app.saveMeta(); this.app.startRun(); };
-    $('btn-intro-skip').onclick = () => { this.meta.seenIntro = true; this.app.saveMeta(); this.app.startRun(); };
-    $('btn-lab-back').onclick = () => this.showTitle();
+    $('btn-intro-go').onclick = () => { this.meta.seenIntro = true; this.app.saveMeta(); this.showFactions(); };
+    $('btn-intro-skip').onclick = () => { this.meta.seenIntro = true; this.app.saveMeta(); this.showFactions(); };
+    $('btn-lab-back').onclick = () => this.showFactions();
+    $('btn-fac-back').onclick = () => this.showTitle();
+    $('btn-ability').onclick = () => this.app.input.triggerAbility();
+    $('fac-grid').addEventListener('click', (e) => {
+      const c = e.target.closest('[data-faction]');
+      if (!c) return;
+      this.app.audio.ensure();
+      this.click();
+      this.app.setFaction(c.dataset.faction);
+      this.showLab();
+    });
     $('btn-begin').onclick = () => { this.app.audio.ensure(); this.app.startRun({ newMap: $('chk-newmap').checked, escalation: +($('sel-esc').value || 0) }); };
     $('btn-over-lab').onclick = () => this.showLab();
     $('btn-research').onclick = () => this.openResearch();
@@ -141,7 +155,7 @@ export class UI {
     $('lab-branches').addEventListener('click', (e) => {
       const n = e.target.closest('[data-node]');
       if (!n) return;
-      if (buyNode(this.meta, n.dataset.node)) {
+      if (buyNode(this.meta, this.app.factionId, n.dataset.node)) {
         this.app.audio.ensure();
         this.app.audio.play('upgrade');
         this.renderLab(n.dataset.node);
@@ -186,11 +200,15 @@ export class UI {
 
   showTitle() {
     this.showScreen('screen-title');
-    const m = this.meta;
-    $('title-stats').innerHTML = m.runs
-      ? `Timelines lived: ${m.runs} &nbsp;·&nbsp; Best: wave ${m.bestWave} &nbsp;·&nbsp; Victories: ${m.victories}<br>Unspent chronons: ${m.chronons}`
+    const ps = Object.values(this.meta.profiles);
+    const runs = ps.reduce((a, p) => a + p.runs, 0);
+    const best = Math.max(0, ...ps.map((p) => p.bestWave));
+    const wins = ps.reduce((a, p) => a + p.victories, 0);
+    const played = Object.entries(this.meta.profiles).filter(([, p]) => p.runs).length;
+    $('title-stats').innerHTML = runs
+      ? `Timelines lived: ${runs} across ${played} faction${played === 1 ? '' : 's'} &nbsp;·&nbsp; Best: wave ${best} &nbsp;·&nbsp; Victories: ${wins}`
       : 'No previous timelines detected.';
-    $('btn-play').textContent = m.runs ? 'RETURN TO THE LOOP' : 'TAKE COMMAND';
+    $('btn-play').textContent = runs ? 'RETURN TO THE LOOP' : 'TAKE COMMAND';
   }
 
   showIntro() {
@@ -206,6 +224,27 @@ export class UI {
     }, 22);
   }
 
+  showFactions() {
+    clearInterval(this.introTimer);
+    this.showScreen('screen-factions');
+    $('fac-grid').innerHTML = FACTION_ORDER.map((fid) => {
+      const f = FACTIONS[fid];
+      const p = this.meta.profiles[fid];
+      const sig = f.units.filter((u) => !['rifle', 'recon', 'at_team', 'manpads'].includes(u)).slice(0, 8);
+      const diff = `<span class="diff" title="Difficulty">${[1, 2, 3].map((i) => `<i class="${i <= f.difficulty ? 'on' : ''}"></i>`).join('')}</span>`;
+      const progress = p?.runs ? `Timelines <b>${p.runs}</b> · best wave <b>${p.bestWave}</b> · <b>${p.chronons}</b> ⧗` : 'No timelines yet';
+      return `<button class="fac-card ${this.meta.faction === fid ? 'last' : ''}" data-faction="${fid}" style="--fc:${f.color}">
+        <div class="fac-top"><img class="emblem" src="${emblemFor(f, UNITS[f.emblem])}" alt="">
+          <div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.nation}</div><div class="fac-doc">${f.doctrine}</div></div></div>
+        <div class="fac-motto">“${f.motto}”</div>
+        <div class="fac-desc">${f.desc}</div>
+        <ul>${f.playstyle.map((x) => `<li>${x}</li>`).join('')}</ul>
+        <div class="fac-units">${sig.map((u) => `<img src="${iconFor('unit', UNITS[u], 0, 44, f.color)}" alt="${UNITS[u].name}" title="${UNITS[u].name}">`).join('')}</div>
+        <div class="fac-foot"><span>${progress}</span>${diff}</div>
+      </button>`;
+    }).join('');
+  }
+
   showLab() {
     clearInterval(this.introTimer);
     this.showScreen('screen-lab');
@@ -213,7 +252,10 @@ export class UI {
   }
 
   renderLab(flash) {
-    const m = this.meta;
+    const m = this.profile;
+    const f = this.faction;
+    $('lab-kicker').textContent = `${f.name.toUpperCase()} · ${f.doctrine.toUpperCase()}`;
+    $('lab-emblem').src = emblemFor(f, UNITS[f.emblem]);
     $('lab-chronons').textContent = m.chronons;
     $('lab-stats').innerHTML = [
       ['Timelines lived', m.runs], ['Best wave', m.bestWave], ['Longest timeline', fmtTime(m.bestTime)],
@@ -222,7 +264,7 @@ export class UI {
     let html = '';
     for (const br of BRANCHES) {
       html += `<div class="branch ${br.id}"><h3>${br.name.toUpperCase()}</h3><p>${br.desc}</p>`;
-      const nodes = META_NODES.filter((n) => n.branch === br.id);
+      const nodes = metaNodesFor(f.id).filter((n) => n.branch === br.id);
       const groups = [...new Set(nodes.map((n) => n.group || ''))];
       for (const gname of groups) {
         if (gname) html += `<h4>${gname.toUpperCase()}</h4>`;
@@ -243,7 +285,7 @@ export class UI {
   }
 
   nodeHTML(n, flash) {
-    const m = this.meta;
+    const m = this.profile;
     const lv = level(m, n.id), max = n.cost.length;
     const cost = nodeCost(m, n);
     const avail = nodeAvailable(m, n);
@@ -252,8 +294,8 @@ export class UI {
     else if (!avail) cls.push('req');
     else if (cost > m.chronons) cls.push('poor');
     if (flash) cls.push('bought');
-    const ic = NODE_ICON[n.id];
-    const img = ic ? `<img src="${iconFor(ic[0] === 'unit' ? 'unit' : 'building', ic[1])}" alt="">` : '';
+    const ic = nodeIcon(n);
+    const img = ic ? `<img src="${iconFor(ic[0], ic[1])}" alt="">` : n.faction ? `<img src="${emblemFor(this.faction, UNITS[this.faction.emblem])}" alt="">` : '';
     const pips = max > 1 ? `<div class="pips">${Array.from({ length: max }, (_, i) => `<i class="${i < lv ? 'on' : ''}"></i>`).join('')}</div>` : '';
     const right = lv >= max ? (max > 1 ? 'MAX' : '✓') : avail ? `${cost} ⧗` : '🔒';
     return `<div class="${cls.join(' ')}" data-node="${n.id}">${img}<div class="nb"><div class="nn">${n.name}</div><div class="nd">${n.desc}</div>${pips}</div><div class="nc">${right}</div></div>`;
@@ -263,9 +305,9 @@ export class UI {
     this.closeResearch(true);
     $('modal-pause').hidden = true;
     this.showScreen('screen-over');
-    const n = this.meta.runs;
+    const n = this.profile.runs;
     const v = result.victory, r = result.retreat;
-    $('over-kicker').textContent = `TIMELINE #${n} — ${v ? 'RESOLVED' : r ? 'ABANDONED' : 'COLLAPSED'}`;
+    $('over-kicker').textContent = `${game.faction.name.toUpperCase()} · TIMELINE #${n} — ${v ? 'RESOLVED' : r ? 'ABANDONED' : 'COLLAPSED'}`;
     const t = $('over-title');
     t.textContent = v ? 'IMPOSSIBLE VICTORY' : r ? 'TEMPORAL JUMP' : 'HQ DESTROYED';
     t.className = v ? 'victory' : 'defeat';
@@ -314,15 +356,17 @@ export class UI {
     this.notices = [];
     this.renderBuildPanel();
     this.updateHUD(true);
-    $('t-timeline').textContent = `TIMELINE ${this.meta.runs + 1}`;
-    this.banner('TIMELINE ' + (this.meta.runs + 1), 'Hold the line, General');
+    const f = this.game.faction;
+    $('t-timeline').textContent = `${f.short.toUpperCase()} · T${this.profile.runs + 1}`;
+    $('t-ability').textContent = f.ability.name;
+    this.banner('TIMELINE ' + (this.profile.runs + 1), `${f.name}: ${f.motto}`);
   }
 
   renderBuildPanel() {
     const g = this.game;
-    const sec = (title, cat) => `<h4>${title}</h4>` + BUILD_ORDER.filter((t) => BUILDINGS[t].cat === cat).map((t) => {
+    const sec = (title, cat) => `<h4>${title}</h4>` + BUILD_ORDER.filter((t) => BUILDINGS[t].cat === cat && g.inRoster(t)).map((t) => {
       const def = BUILDINGS[t];
-      const locked = !g.isUnlocked(def);
+      const locked = !g.available(t);
       return `<button class="bbtn ${locked ? 'locked' : ''}" data-build="${t}"><img src="${iconFor('building', def)}" alt=""><span class="nm">${def.name}</span><span class="cost">${locked ? '🔒' : g.costOf(t, true)}</span></button>`;
     }).join('');
     $('buildpanel').innerHTML = sec('BASE', 'base') + sec('DEFENSE', 'defense');
@@ -404,6 +448,12 @@ export class UI {
     const span = g.wave.n === 0 ? WAVE.first : WAVE.interval;
     $('t-wavebar').style.width = `${Math.max(0, Math.min(100, (1 - left / span) * 100))}%`;
     $('t-time').textContent = fmtTime(g.time);
+    const A = g.ability, abBtn = $('btn-ability');
+    const cdTotal = g.abilityCooldown();
+    $('t-abfill').style.height = `${A.cd > 0 ? (1 - A.cd / cdTotal) * 100 : 100}%`;
+    abBtn.classList.toggle('ready', A.cd <= 0);
+    abBtn.classList.toggle('armed', this.app.input.mode === 'ability');
+    $('t-abcd').textContent = g.overdrive() ? `active ${Math.ceil(A.activeUntil - g.time)}s` : A.cd > 0 ? `${Math.ceil(A.cd)}s` : this.app.input.mode === 'ability' ? 'pick a target' : 'READY';
     $('paused-flag').hidden = !this.app.paused;
     $('btn-pause').textContent = this.app.paused ? '▶' : '❚❚';
 
@@ -462,9 +512,9 @@ export class UI {
     if (!b) return slots;
     if (b.built && b.def.trains) {
       let i = 0;
-      for (const t of b.def.trains) {
+      for (const t of g.trainsFor(b)) {
         const def = UNITS[t];
-        const locked = !g.isUnlocked(def);
+        const locked = !g.available(t);
         slots[i++] = {
           id: 'train:' + t, train: t, cls: locked ? 'locked' : '', disabled: locked,
           html: `<img src="${iconFor('unit', def)}" alt=""><span class="cost">${locked ? '🔒' : g.costOf(t, false)}</span>`,
@@ -543,7 +593,11 @@ export class UI {
     stats.push(`ARMOR <b>${ARMOR_NAMES[e.armor]}</b>`);
     if (e.st.dr) stats.push(`DMG TAKEN <b>-${Math.round(e.st.dr * 100)}%</b>`);
     if (e.def.income) stats.push(`INCOME <b>+${(e.def.income * (1 + g.mods.income)).toFixed(1)}/s</b>`);
-    if (e.def.supply && !hostile) stats.push(`SUPPLY <b>+${e.def.supply}</b>`);
+    if (e.kind === 'building' && e.def.supply && !hostile) stats.push(`SUPPLY <b>+${e.def.supply}</b>`);
+    if (e.kind === 'unit' && !hostile) stats.push(`SUPPLY <b>${e.spawned ? 'free' : g.supplyOf(e.type)}</b>`);
+    if (e.def.healer) stats.push(`HEALS <b>${(e.def.healer.rate * 100).toFixed(1)}%/s</b>`);
+    if (hostile && e.hackPts > 0) stats.push(`<span style="color:var(--violet)">HACKED <b>${Math.floor((e.hackPts / (e.st.maxHp * 0.6)) * 100)}%</b></span>`);
+    if (e.stunUntil > g.time) stats.push('<span style="color:var(--violet)">STUNNED</span>');
     let extra = '';
     if (e.kind === 'unit' && !hostile) {
       const o = e.order.type;
@@ -570,35 +624,43 @@ export class UI {
     const fake = { kind: isBuilding ? 'building' : 'unit', def, team: 0, tags: g ? g.tagsFor(isBuilding ? 'building' : 'unit', Object.keys(isBuilding ? BUILDINGS : UNITS).find((k) => (isBuilding ? BUILDINGS : UNITS)[k] === def), def, 0) : [] };
     const st = g ? g.computeStats(fake) : { maxHp: def.hp, dmg: def.weapon?.dmg, range: def.weapon?.range, cd: def.weapon?.cd, speed: def.speed };
     const parts = [`HP ${Math.round(st.maxHp)}`];
-    if (def.weapon) {
+    if (def.weapon && def.weapon.type !== 'hack') {
       const w = def.weapon;
       parts.push(`DMG ${Math.round(st.dmg)}${w.salvo ? '×' + w.salvo : ''}${w.splash ? ' (splash)' : ''}`, `RNG ${Math.round(st.range)}`, `${(1 / st.cd).toFixed(1)}/s`, `hits ${TARGETS[w.targets]}`);
       const best = Object.entries(w.vs).filter(([k, v]) => v >= 1.2 && k !== 'missile').map(([k]) => ARMOR_NAMES[k]);
       if (best.length) parts.push(`strong vs ${best.join(', ')}`);
       if (w.intercept) parts.push('intercepts missiles');
+      if (w.emp) parts.push(`EMP stun ${w.emp}s`);
     }
+    if (def.weapon?.type === 'hack') parts.push(`RNG ${def.weapon.range}`, 'hacks vehicles, robots and drones to your side');
+    if (def.healer) parts.push(`heals ${def.healer.only === 'mech' ? 'robots and buildings' : def.healer.only} ${(def.healer.rate * 100).toFixed(1)}%/s`);
     if (!isBuilding) parts.push(`SPD ${Math.round(st.speed || def.speed)}`, ARMOR_NAMES[def.armor]);
     return parts.join(' · ');
+  }
+
+  lockNote(id) {
+    const node = nodeById(this.game.faction.id, this.game.locks[id]);
+    return `<div class="tt-lock">🔒 Unlock in the ${this.game.faction.short} Chrono Lab: ${node?.name || '?'}</div>`;
   }
 
   tooltipFor(el) {
     const g = this.game;
     if (el.dataset.build) {
       const t = el.dataset.build, def = BUILDINGS[t];
-      const locked = g && !g.isUnlocked(def);
+      const locked = g && !g.available(t);
       return `<h5>${def.name}</h5><div class="tt-cost">${g ? g.costOf(t, true) : def.cost} credits · ${Math.round(g ? g.timeOf(t, true) : def.time)}s · ${def.w}×${def.h}</div>` +
         `<div class="tt-stats">${this.unitStatsLine(def, true)}</div><p>${def.desc}</p>${def.trains ? `<p>Trains: ${def.trains.map((u) => UNITS[u].name).join(', ')}</p>` : ''}` +
-        (locked ? `<div class="tt-lock">🔒 Unlock in the Chrono Lab: ${NODE_BY_ID[def.unlock].name}</div>` : '');
+        (locked ? this.lockNote(t) : '');
     }
     if (el.dataset.slot != null) {
       const s = this.cardSlots[+el.dataset.slot];
       if (!s) return '';
       if (s.train) {
         const def = UNITS[s.train];
-        const locked = !g.isUnlocked(def);
+        const locked = !g.available(s.train);
         return `<h5>${def.name} <kbd>${CARD_KEYS[+el.dataset.slot]}</kbd></h5><div class="tt-cost">${g.costOf(s.train, false)} credits · ${g.timeOf(s.train, false).toFixed(1)}s · ${def.supply} supply</div>` +
           `<div class="tt-stats">${this.unitStatsLine(def, false)}</div><p>${def.desc}</p>` +
-          (locked ? `<div class="tt-lock">🔒 Unlock in the Chrono Lab: ${NODE_BY_ID[def.unlock].name}</div>` : '');
+          (locked ? this.lockNote(s.train) : '');
       }
       return {
         amove: '<h5>Attack-move <kbd>A</kbd></h5><p>Then click: units advance and engage every hostile on the way.</p>',
@@ -608,12 +670,12 @@ export class UI {
       }[s.id] || '';
     }
     if (el.dataset.node) {
-      const n = NODE_BY_ID[el.dataset.node];
-      const ic = NODE_ICON[n.id];
-      const lv = level(this.meta, n.id);
+      const n = nodeById(this.app.factionId, el.dataset.node);
+      const ic = nodeIcon(n);
+      const lv = level(this.profile, n.id);
       let body = `<h5>${n.name}</h5><div class="tt-cost">Level ${lv}/${n.cost.length}${lv < n.cost.length ? ` · next: ${n.cost[lv]} chronons` : ''}</div><p>${n.desc}</p>`;
       if (ic) body += `<div class="tt-stats">${ic[1].name}: ${this.unitStatsLine(ic[1], ic[0] !== 'unit')}</div><p>${ic[1].desc}</p>`;
-      if (n.req && !nodeAvailable(this.meta, n)) body += `<div class="tt-lock">Requires: ${n.req.map((r) => NODE_BY_ID[r].name).join(', ')}</div>`;
+      if (n.req && !nodeAvailable(this.profile, n)) body += `<div class="tt-lock">Requires: ${n.req.map((r) => nodeById(this.app.factionId, r).name).join(', ')}</div>`;
       return body;
     }
     if (el.dataset.mtype) {
@@ -631,6 +693,10 @@ export class UI {
       case 'timeline': return '<h5>Timeline</h5><p>How many times you have looped, and how long this one has lasted.</p>';
       case 'pause': return '<h5>Pause <kbd>P</kbd></h5>';
       case 'mute': return '<h5>Sound <kbd>M</kbd></h5>';
+      case 'ability': {
+        const A = g.ability;
+        return `<h5>${A.name} <kbd>G</kbd></h5><div class="tt-cost">Cooldown ${Math.round(g.abilityCooldown())}s${A.cd > 0 ? ` · ready in ${Math.ceil(A.cd)}s` : ' · READY'}</div><p>${A.desc}</p>${A.target ? '<p>Click a target in scouted territory after pressing G.</p>' : ''}`;
+      }
       case 'menu': return '<h5>Command menu <kbd>Esc</kbd></h5><p>Field manual, research log, and the time machine.</p>';
       case 'newmap': return '<h5>Divergent timeline</h5><p>Jump to a different branch of history: a brand new map. Your Chrono Cartography memory of the old map is lost.</p>';
       case 'escalation': return '<h5>Escalation</h5><p>After a victory, the Hegemony remembers. Each level: enemy +20% HP and damage, +15% wave size, +25% chronons.</p>';

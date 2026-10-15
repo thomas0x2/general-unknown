@@ -22,6 +22,23 @@ npm run build        # bundles everything into one self-contained file: dist/ind
 
 `dist/index.html` can be opened directly from disk or hosted anywhere.
 
+## Factions
+
+Six allied nations face the same invasion. Each has its own roster, unique units and structures,
+passive doctrine, research cards, **commander ability** (`G`) and its **own save profile**:
+chronons, Chrono Lab unlocks and records are tracked separately per faction.
+
+| Faction | Doctrine | Playstyle | Signature units / structures | Ability |
+| --- | --- | --- | --- | --- |
+| **Valdaran Defense Force** | Combined arms | Balanced; +10% research, extra reroll | Full mix of infantry, robots, drones, railguns | Artillery Barrage |
+| **Iron Guard** | Total infantry | Cheap, fast, tough infantry, +8 supply; no robots | Grenadiers, Shock Troopers, Combat Medics, Mortar Teams, Field Hospital | Mass Mobilization (free reservists) |
+| **Swarm Collective** | Drone swarms | Drones 25% cheaper, faster, half supply; weak infantry | Wasp gun drones, Stinger interceptors, Bomber drones, self-replicating Swarm Hive | Swarm Strike (free FPV wave) |
+| **Ghostnet Directorate** | Cyber warfare | Hack and stun the enemy; +20% research, +30% EW range | Hacker Cells (convert enemy vehicles, robots, drones), EMP drones, Cyber Ops Center (shrinks waves, spoofs missiles), Disruptor Tower | Network Breach (mass stun + capture) |
+| **Forge Union** | Industrial might | Cheap self-repairing buildings, +30% production, richer fabricators | Repair Crawlers, Juggernaut super-tanks, Arms Foundry, Bastion fortress | Overdrive (3× production) |
+| **Sky Republic** | Air power | Strong, fast aircraft, longer-range AA; weak ground troops | Attack Helicopters, Tiltrotor Gunships, Strike Fighters, AWACS (marks targets), Airbase, Rearm Pad | Air Strike (bomber carpet run) |
+
+Saves from before factions existed are migrated into the Valdaran profile.
+
 ## How it works
 
 ### Each timeline (a run)
@@ -49,7 +66,8 @@ win the impossible war, and unlock **Escalation** levels for even harder (and mo
 ### The Chrono Lab (permanent progression)
 When a timeline ends you earn **Chronons** (waves survived, kills, outposts and facilities destroyed,
 time survived). Spend them in three branches:
-- **Arsenal**: unlock new units and structures.
+- **Arsenal**: unlock new units and structures (each faction has its own tree).
+- **Faction doctrines**: upgrade your commander ability and the faction's specialty.
 - **Doctrine**: stacking permanent bonuses (HP, damage, income, build speed, starting credits, supply…).
 - **Temporal**: research speed, rarity luck, extra draft options, rerolls, free starting drafts,
   *Early Warning* (see the next wave's composition), *Chrono Cartography* (remember explored terrain from
@@ -72,6 +90,7 @@ Progress is saved in your browser's `localStorage`.
 | Arrows, screen edges, middle drag, minimap | Move the camera; mouse wheel zooms |
 | `Space` | Jump to the latest alert |
 | `T` | Open research |
+| `G` | Commander ability (targeted abilities: then click scouted ground) |
 | `P`, `Esc` | Pause, command menu (time machine, research log) |
 | `+` / `-`, `M` | Game speed, mute |
 
@@ -80,10 +99,11 @@ Progress is saved in your browser's `localStorage`.
 ```
 index.html, style.css   page shell and UI styles
 src/data.js             unit, building and enemy definitions + tuning constants
+src/factions.js         playable factions: rosters, unlock trees, passives, abilities
 src/game.js             simulation: orders, combat, economy, fog of war, enemy AI and waves
 src/map.js              procedural map generation and flow-field pathfinding
 src/upgrades.js         research cards and rarity system
-src/meta.js             Chrono Lab tree, rewards and save data
+src/meta.js             Chrono Lab trees, rewards and per-faction save profiles
 src/render.js           canvas renderer (terrain, units, effects, fog, minimap)
 src/shapes.js           vector art for every unit and structure
 src/ui.js, input.js     HUD, menus, research drafts, controls

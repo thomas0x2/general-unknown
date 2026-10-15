@@ -22,6 +22,14 @@ await page.click('#btn-play');
 await page.waitForTimeout(1200);
 await page.screenshot({ path: `${out}/02-intro.png` });
 await page.click('#btn-intro-skip');
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${out}/03a-factions.png` });
+await page.click('[data-faction="ghostnet"]');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/03b-lab.png` });
+await page.click('#btn-lab-back');
+await page.click('[data-faction="valdara"]');
+await page.click('#btn-begin');
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/03-game-start.png` });
 
@@ -63,6 +71,18 @@ await page.waitForTimeout(700);
 await page.screenshot({ path: `${out}/06-research.png` });
 await page.keyboard.press('1');
 await page.keyboard.press('Escape');
+// commander ability via hotkey + targeted click
+await page.evaluate(() => { const g = window.app.game, R = window.app.renderer; g.ability.cd = 0; R.cam.x = g.hq.x + 150; R.cam.y = g.hq.y - 100; });
+await page.keyboard.press('g');
+const aim = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.toScreen(g.hq.x + 250, g.hq.y - 150); });
+await page.mouse.move(aim.x, aim.y);
+await page.waitForTimeout(200);
+await page.screenshot({ path: `${out}/06b-ability-aim.png` });
+await page.mouse.click(aim.x, aim.y);
+await page.waitForTimeout(1500);
+const used = await page.evaluate(() => window.app.game.ability.cd > 0);
+if (!used) errors.push('ability was not used');
+await page.screenshot({ path: `${out}/06c-ability-fired.png` });
 // jump camera to the enemy base with recon (cheat reveal for a screenshot)
 await page.evaluate(() => {
   const g = window.app.game, R = window.app.renderer;

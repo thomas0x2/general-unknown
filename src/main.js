@@ -4,7 +4,9 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
-import { loadMeta, saveMeta, computeReward, encodeMemory } from './meta.js';
+import { loadMeta, saveMeta, computeReward, encodeMemory, getProfile } from './meta.js';
+import { FACTIONS } from './factions.js';
+import { setPlayerColor } from './shapes.js';
 import { randomSeed } from './rng.js';
 
 const STEP = 1 / 30;
@@ -12,6 +14,8 @@ const STEP = 1 / 30;
 class App {
   constructor() {
     this.meta = loadMeta();
+    this.factionId = FACTIONS[this.meta.faction] ? this.meta.faction : 'valdara';
+    this.applyFactionLook();
     this.audio = new Audio();
     this.renderer = new Renderer(document.getElementById('world'));
     this.game = null;
@@ -32,12 +36,28 @@ class App {
 
   saveMeta() { saveMeta(this.meta); }
 
+  get profile() { return getProfile(this.meta, this.factionId); }
+
+  setFaction(fid) {
+    this.factionId = fid;
+    this.meta.faction = fid;
+    getProfile(this.meta, fid);
+    this.saveMeta();
+    this.applyFactionLook();
+  }
+
+  applyFactionLook() {
+    const f = FACTIONS[this.factionId];
+    setPlayerColor(f.color);
+    document.documentElement.style.setProperty('--faction', f.color);
+  }
+
   startRun(opts = {}) {
-    const m = this.meta;
+    const m = this.profile;
     if (opts.newMap) { m.seed = randomSeed(); m.memory = ''; }
     if (opts.escalation != null) m.escalation = Math.min(opts.escalation, m.maxEscalation);
     this.saveMeta();
-    this.game = new Game({ meta: m, seed: m.seed, escalation: m.escalation });
+    this.game = new Game({ profile: m, faction: this.factionId, seed: m.seed, escalation: m.escalation });
     this.renderer.setGame(this.game);
     this.renderer.resize();
     this.renderer.clampCam();
@@ -61,7 +81,7 @@ class App {
 
   endRun() {
     const g = this.game;
-    const m = this.meta;
+    const m = getProfile(this.meta, g.faction.id);
     const reward = computeReward(g);
     m.runs++;
     m.chronons += reward.total;

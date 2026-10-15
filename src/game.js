@@ -5,8 +5,9 @@ import {
 } from './data.js';
 import { generateMap, Pathing } from './map.js';
 import { mulberry32, randomSeed } from './rng.js';
-import { createMods, modSum, makeDraft, CARD_BY_ID, RARITIES } from './upgrades.js';
+import { createMods, modSum, makeDraft, CARD_BY_ID, RARITIES, cardAvailable } from './upgrades.js';
 import { applyMeta, unlockedSet, decodeMemory } from './meta.js';
+import { FACTIONS, lockMap } from './factions.js';
 
 export const BUILD_RADIUS = 9; // tiles from an existing building
 const FOG_INTERVAL = 0.2;
@@ -55,8 +56,11 @@ function lerpAngle(a, b, t) {
 }
 
 export class Game {
-  constructor({ meta, seed, escalation = 0 }) {
+  constructor({ profile, faction = 'valdara', seed, escalation = 0 }) {
     this.seed = seed;
+    this.faction = FACTIONS[faction];
+    this.roster = new Set([...this.faction.units, ...this.faction.buildings, 'hq']);
+    this.locks = lockMap(this.faction);
     this.rng = mulberry32(randomSeed());
     this.gameSeed = randomSeed();
     this.map = generateMap(seed);
@@ -75,20 +79,25 @@ export class Game {
     this.over = null;
     this.mods = createMods();
     this.research = { points: 0, level: 0, needed: RESEARCH.first, ready: 0, rerolls: 0, draft: null, picks: [] };
-    this.unlocked = unlockedSet(meta);
+    this.unlocked = unlockedSet(profile, this.faction.id);
     this.luck = 0; this.draftSize = 3; this.extraRifles = 0; this.chrononGain = 0;
-    applyMeta(meta, this);
+    this.faction.passive(this);
+    applyMeta(profile, this);
+    this.ability = { ...this.faction.ability, cd: 30, activeUntil: 0 };
+    this.pending = []; // scheduled ability effects
+    this.prodSpeed = 1;
 
     const N = MAP_W * MAP_H;
     this.vis = new Uint8Array(N);
-    this.explored = this.cartography && meta.seed === seed ? decodeMemory(meta.memory, N) : new Uint8Array(N);
+    this.explored = this.cartography && profile.seed === seed ? decodeMemory(profile.memory, N) : new Uint8Array(N);
+    this.marked = new Uint8Array(N); // tiles covered by AWACS: enemies there take extra damage
     this.memoryExplored = this.explored.slice();
     this.fogT = 0;
     this.fogVersion = 0;
 
     this.wave = { n: 0, next: WAVE.first, lastSpawn: null };
     this.missileT = 30;
-    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, waveKills: 0 };
+    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0 };
     this.throttles = new Map();
     this.income = 0; this.supplyUsed = 0; this.supplyCap = 0;
 
@@ -105,12 +114,13 @@ export class Game {
   setupPlayer() {
     const { hq } = this.map;
     this.hq = this.addBuilding('hq', TEAM_PLAYER, hq.x - 1, hq.y - 1, true);
-    const n = 2 + this.extraRifles;
-    for (let i = 0; i < n; i++) {
-      const a = -Math.PI / 4 + (i - n / 2) * 0.35;
-      this.spawnUnitNear('rifle', TEAM_PLAYER, this.hq.x + Math.cos(a) * 80, this.hq.y + Math.sin(a) * 80);
-    }
-    this.spawnUnitNear('recon', TEAM_PLAYER, this.hq.x + 50, this.hq.y - 60);
+    const start = [...this.faction.start, ...Array(this.extraRifles).fill('rifle')];
+    const n = start.length;
+    start.forEach((type, i) => {
+      const a = -Math.PI / 4 + (i - (n - 1) / 2) * 0.32;
+      const r = UNITS[type].air ? 60 : 85;
+      this.spawnUnitNear(type, TEAM_PLAYER, this.hq.x + Math.cos(a) * r, this.hq.y + Math.sin(a) * r);
+    });
     this.hqGoals = [];
     for (let y = this.hq.ty; y < this.hq.ty + 3; y++)
       for (let x = this.hq.tx; x < this.hq.tx + 3; x++) this.hqGoals.push(y * MAP_W + x);
@@ -186,7 +196,7 @@ export class Game {
       return {
         maxHp: def.hp * esc * elite, speed: def.speed || 0, sight: def.sight,
         dmg: w ? w.dmg * esc * (1 + (elite - 1) * 0.6) : 0, range: w ? w.range : 0, cd: w ? w.cd : 0,
-        splash: w?.splash || 0, regen: 0, dr: 0, intercept: 1,
+        splash: w?.splash || 0, regen: 0, dr: 0, intercept: 1, hack: 1, stun: 1, radius: 1,
       };
     }
     const tags = e.tags;
@@ -202,6 +212,9 @@ export class Game {
       regen: M('regen'),
       dr: Math.min(0.6, M('dr')),
       intercept: 1 + M('intercept'),
+      hack: 1 + M('hack'),
+      stun: 1 + M('stun'),
+      radius: 1 + M('range'), // aura radius for jammers, pulses, healers
     };
   }
 
@@ -229,7 +242,19 @@ export class Game {
     return def.time / (1 + modSum(this.mods, 'build', tags));
   }
 
-  isUnlocked(def) { return !def.unlock || this.unlocked.has(def.unlock); }
+  // In this faction's roster and unlocked in the Chrono Lab.
+  available(id) { return this.roster.has(id) && (!this.locks[id] || this.unlocked.has(this.locks[id])); }
+  isUnlocked(id) { return this.available(id); }
+  inRoster(id) { return this.roster.has(id); }
+  hasClass(cls) { return this.faction.units.some((u) => UNITS[u].cls === cls && this.available(u)); }
+  trainsFor(b) {
+    const list = b.type === 'hq' ? this.faction.hqTrains || b.def.trains : b.def.trains;
+    return (list || []).filter((t) => this.roster.has(t));
+  }
+  supplyOf(type) {
+    const def = UNITS[type];
+    return def.supply * (this.faction.supplyMult?.[def.cls] ?? 1);
+  }
 
   // --------------------------------------------------------------- entities
   spawnUnit(type, team, x, y) {
@@ -323,6 +348,7 @@ export class Game {
     this.time += dt;
     this.updateEconomy(dt);
     this.updateResearch(dt);
+    this.updateAbility(dt);
 
     this.hash.clear();
     for (const u of this.units) if (!u.dead) this.hash.insert(u);
@@ -347,18 +373,23 @@ export class Game {
   }
 
   updateEconomy(dt) {
-    let inc = 0, cap = 0, used = 0;
+    let inc = 0, cap = 0, used = 0, prod = 0, cyber = 0;
+    const ib = this.faction.incomeBonus || {};
     for (const b of this.buildings) {
       if (b.team !== TEAM_PLAYER || !b.built || b.dead) continue;
-      inc += b.def.income || 0;
+      inc += (b.def.income || 0) * (1 + (ib[b.type] || 0));
       cap += b.def.supply || 0;
+      prod += b.def.prodBonus || 0;
+      if (b.def.cyber) cyber++;
     }
+    this.cyberCenters = Math.min(2, cyber);
+    this.prodSpeed = (1 + prod) * (this.overdrive() ? 3 : 1);
     const sites = this.sites.filter((s) => s.owner === TEAM_PLAYER).length;
     inc += sites * SITE_INCOME;
-    for (const u of this.units) if (u.team === TEAM_PLAYER && !u.dead && !u.spawned) used += u.def.supply;
+    for (const u of this.units) if (u.team === TEAM_PLAYER && !u.dead && !u.spawned) used += this.supplyOf(u.type);
     this.income = inc * (1 + this.mods.income);
     this.supplyCap = cap + this.mods.supply;
-    this.supplyUsed = used;
+    this.supplyUsed = Math.round(used * 10) / 10;
     const gain = this.income * dt;
     this.credits += gain;
     this.stats.earned += gain;
@@ -388,7 +419,7 @@ export class Game {
   openDraft() {
     const R = this.research;
     if (R.draft || R.ready <= 0) return R.draft;
-    R.draft = makeDraft(this.rng, this.draftSize, this.luck, this.unlocked);
+    R.draft = makeDraft(this.rng, this.draftSize, this.luck, (c) => cardAvailable(c, this));
     return R.draft;
   }
 
@@ -396,7 +427,7 @@ export class Game {
     const R = this.research;
     if (!R.draft || R.rerolls <= 0) return;
     R.rerolls--;
-    R.draft = makeDraft(this.rng, this.draftSize, this.luck, this.unlocked);
+    R.draft = makeDraft(this.rng, this.draftSize, this.luck, (c) => cardAvailable(c, this));
   }
 
   pickDraft(i) {
@@ -412,11 +443,133 @@ export class Game {
     this.sfx('upgrade');
   }
 
+  // ------------------------------------------------------- commander ability
+  overdrive() { return this.ability.id === 'overdrive' && this.time < this.ability.activeUntil; }
+  abilityCooldown() { return this.ability.cooldown * Math.max(0.4, 1 - this.mods.abilityCd); }
+  abilityPower() { return 1 + this.mods.abilityPower; }
+
+  updateAbility(dt) {
+    this.ability.cd = Math.max(0, this.ability.cd - dt);
+    if (!this.pending.length) return;
+    const due = this.pending.filter((p) => this.time >= p.at);
+    if (!due.length) return;
+    this.pending = this.pending.filter((p) => this.time < p.at);
+    for (const p of due) p.fn();
+  }
+
+  later(delay, fn) { this.pending.push({ at: this.time + delay, fn }); }
+
+  // Returns { ok, reason }. x/y are ignored for untargeted abilities.
+  useAbility(x, y) {
+    const A = this.ability;
+    if (this.over) return { ok: false };
+    if (A.cd > 0) return { ok: false, reason: `${A.name} recharging (${Math.ceil(A.cd)}s)` };
+    if (A.target) {
+      const i = this.tileIdx(x, y);
+      if (i < 0 || !this.explored[i]) return { ok: false, reason: 'Target must be in scouted territory' };
+    }
+    const pw = this.abilityPower();
+    const hq = this.hq;
+    switch (A.id) {
+      case 'barrage': {
+        const n = Math.round(14 * Math.min(2, pw));
+        for (let i = 0; i < n; i++) {
+          const a = this.rng() * Math.PI * 2, r = Math.sqrt(this.rng()) * A.radius;
+          const tx = x + Math.cos(a) * r, ty = y + Math.sin(a) * r;
+          this.projectiles.push({
+            kind: 'proj', type: 'shell', team: TEAM_PLAYER, x: hq.x, y: hq.y, angle: Math.atan2(ty - hq.y, tx - hq.x),
+            speed: 950, target: null, tx, ty, dmg: 150 * pw, vs: VS.explosive, splash: 55, homing: false, interceptable: false,
+            hp: 30, air: true, armor: 'missile', radius: 3, dead: false, life: 0, src: hq, delay: i * 0.28,
+          });
+        }
+        this.sfx('launch', hq.x, hq.y);
+        break;
+      }
+      case 'mobilize': {
+        const n = Math.min(16, Math.round((4 + Math.floor(this.wave.n / 2)) * pw));
+        for (let i = 0; i < n; i++) {
+          const type = i % 3 === 2 && this.inRoster('grenadier') ? 'grenadier' : 'rifle';
+          const a = (i / n) * Math.PI * 2;
+          const u = this.spawnUnitNear(type, TEAM_PLAYER, hq.x + Math.cos(a) * 90, hq.y + Math.sin(a) * 90);
+          if (!u) continue;
+          u.spawned = true;
+          this.setIdle(u);
+        }
+        this.fx({ type: 'ring', x: hq.x, y: hq.y, size: 140, life: 0.8, color: this.faction.color });
+        this.notify(`Mass Mobilization: ${n} reservist squads report for duty`, 'good');
+        this.sfx('ready');
+        break;
+      }
+      case 'swarm': {
+        const n = Math.min(26, Math.round((6 + this.wave.n * 0.6) * pw));
+        for (let i = 0; i < n; i++) {
+          const u = this.spawnUnit('fpv', TEAM_PLAYER, hq.x + (this.rng() - 0.5) * 60, hq.y + (this.rng() - 0.5) * 60);
+          u.spawned = true;
+          u.order = { type: 'amove', x: x + (this.rng() - 0.5) * A.radius, y: y + (this.rng() - 0.5) * A.radius };
+          u.home = { x: u.order.x, y: u.order.y };
+        }
+        this.notify(`Swarm Strike: ${n} FPV drones launched`, 'good');
+        this.sfx('launch', hq.x, hq.y);
+        break;
+      }
+      case 'breach': {
+        const r = A.radius;
+        const victims = [];
+        this.hash.query(x, y, r + 40, (o) => {
+          if (o.team !== TEAM_ENEMY || o.dead || Math.hypot(o.x - x, o.y - y) - o.radius > r) return;
+          this.stun(o, 8 * (1 + (this.mods.stun.all || 0)));
+          if (o.kind === 'unit' && this.hackable(o)) victims.push(o);
+        });
+        victims.sort((a, b) => b.def.cost - a.def.cost);
+        const n = Math.round(2 * pw);
+        victims.slice(0, n).forEach((u) => this.convert(u));
+        this.fx({ type: 'ring', x, y, size: r, life: 0.9, color: '#c08cff' });
+        this.fx({ type: 'ring', x, y, size: r * 0.6, life: 0.6, color: '#ffffff' });
+        this.notify(`Network Breach: hostile systems offline${victims.length ? `, ${Math.min(n, victims.length)} machines captured` : ''}`, 'good');
+        this.sfx('railgun', x, y);
+        break;
+      }
+      case 'overdrive': {
+        A.activeUntil = this.time + A.duration * pw;
+        this.updateEconomy(0);
+        this.notify(`Overdrive: factories at 300% for ${Math.round(A.duration * pw)}s`, 'good');
+        this.sfx('built');
+        break;
+      }
+      case 'airstrike': {
+        const ang = Math.atan2(y - hq.y, x - hq.x);
+        const dx = Math.cos(ang), dy = Math.sin(ang);
+        const L = A.length, n = 9;
+        const from = { x: x - dx * 900, y: y - dy * 900 }, to = { x: x + dx * 900, y: y + dy * 900 };
+        this.later(0.8, () => this.fx({ type: 'jet', x: from.x, y: from.y, x2: to.x, y2: to.y, life: 2.2 }));
+        for (let i = 0; i < n; i++) {
+          const f = i / (n - 1) - 0.5;
+          const bx = x + dx * f * L, by = y + dy * f * L;
+          // the jet crosses 1800px in 2.2s; drop each bomb as it passes overhead
+          const t = 0.8 + ((900 + f * L) / 1800) * 2.2 + 0.25;
+          this.later(t, () => {
+            this.splash(bx, by, A.radius, 230 * pw, VS.explosive, TEAM_PLAYER, hq);
+            this.fx({ type: 'explosion', x: bx, y: by, size: A.radius, life: 0.7 });
+            this.fx({ type: 'scorch', x: bx, y: by, size: A.radius * 0.8, life: 30 });
+            this.sfx('bigboom', bx, by);
+          });
+        }
+        this.notify('Air Strike: bomber inbound', 'good');
+        break;
+      }
+    }
+    A.cd = this.abilityCooldown();
+    return { ok: true };
+  }
+
   // --------------------------------------------------------------- targeting
   canHit(w, o) {
+    if (w.type === 'hack') return o.kind === 'unit' && o.team !== TEAM_PLAYER && this.hackable(o);
     if (o.air) return (w.targets === 'air' || w.targets === 'both') && (w.vs.air || 0) > 0;
     return w.targets === 'ground' || w.targets === 'both';
   }
+
+  hackable(o) { return o.def.cls !== 'infantry' && o.def.shape !== 'walker' && !o.dead; }
 
   findTarget(e, range) {
     const w = e.def.weapon;
@@ -460,9 +613,15 @@ export class Game {
     u.flash = Math.max(0, u.flash - dt);
     if (st.regen && u.hp < st.maxHp) u.hp = Math.min(st.maxHp, u.hp + st.maxHp * st.regen * dt);
     u.cd -= dt;
+    if (u.hackPts && this.time - u.hackT > 4) u.hackPts = Math.max(0, u.hackPts - u.st.maxHp * 0.05 * dt);
+    if (u.stunUntil > this.time) return;
     const w = u.def.weapon;
 
     if (u.def.spawner) this.updateSpawner(u, dt);
+    if (u.def.healer) {
+      u.healT = (u.healT ?? 0) - dt;
+      if (u.healT <= 0) { u.healT = 0.25; this.repairAround(u, 0.25); }
+    }
 
     if (u.target && (u.target.dead || (u.target.kind === 'proj' && !u.target.interceptable))) u.target = null;
     const o = u.order;
@@ -641,6 +800,11 @@ export class Game {
     const muzzle = { x: e.x + Math.cos(e.angle) * e.radius * 0.8, y: e.y + Math.sin(e.angle) * e.radius * 0.8 };
     const intercept = !!w.intercept && (t.kind === 'proj' || t.air);
     switch (w.type) {
+      case 'hack': {
+        this.hack(t, st.dmg * st.hack, e);
+        this.fx({ type: 'beam', x: muzzle.x, y: muzzle.y, x2: t.x, y2: t.y, life: 0.2, team: e.team, color: '192,140,255' });
+        break;
+      }
       case 'bullet': {
         this.damage(t, st.dmg, w.vs, e, intercept);
         this.fx({ type: 'tracer', x: muzzle.x, y: muzzle.y, x2: t.x + (this.rng() - 0.5) * 8, y2: t.y + (this.rng() - 0.5) * 8, life: 0.07, team: e.team, heavy: st.dmg > 18 });
@@ -717,6 +881,14 @@ export class Game {
 
   kamikaze(u, t) {
     const st = u.st;
+    if (u.def.weapon.emp) {
+      const r = st.splash;
+      this.hash.query(t.x, t.y, r + 30, (o) => {
+        if (o.team === u.team || o.dead || Math.hypot(o.x - t.x, o.y - t.y) - (o.radius || 0) > r) return;
+        this.stun(o, u.def.weapon.emp * st.stun);
+      });
+      this.fx({ type: 'ring', x: t.x, y: t.y, size: r, life: 0.6, color: '#c08cff' });
+    }
     this.damage(t, st.dmg, u.def.weapon.vs, u);
     this.splash(t.x, t.y, st.splash, st.dmg * 0.45, u.def.weapon.vs, u.team, u, t);
     this.fx({ type: 'explosion', x: t.x, y: t.y, size: st.splash, life: 0.5 });
@@ -731,6 +903,7 @@ export class Game {
     if (mult <= 0) return;
     let dmg = raw * mult;
     if (intercept && src?.st) dmg *= src.st.intercept;
+    if (t.team === TEAM_ENEMY && t.kind !== 'proj' && this.marked[this.tileIdx(t.x, t.y)]) dmg *= 1.15;
     if (t.st?.dr) dmg *= 1 - t.st.dr;
     t.hp -= dmg;
     t.flash = 0.08;
@@ -758,6 +931,36 @@ export class Game {
       const f = 1 - 0.5 * Math.max(0, d) / r;
       this.damage(o, dmg * f, vs, src);
     });
+  }
+
+  // Hacking: progress accumulates until the machine's control link is broken, then it switches sides.
+  hack(t, pts, src) {
+    if (t.dead || t.team === TEAM_PLAYER) return;
+    t.hackPts = (t.hackPts || 0) + pts;
+    t.hackT = this.time;
+    if (t.garrison && src) this.alertGarrison(t, src);
+    if (t.hackPts >= t.st.maxHp * 0.6) this.convert(t);
+  }
+
+  convert(u) {
+    u.team = TEAM_PLAYER;
+    u.garrison = false;
+    u.spawned = true; // captured units cost no supply
+    u.hackPts = 0;
+    u.target = null;
+    u.tags = ['all', 'unit', u.def.cls, u.type];
+    const ratio = u.hp / u.st.maxHp;
+    u.st = this.computeStats(u);
+    u.hp = Math.max(1, ratio * u.st.maxHp);
+    this.setIdle(u);
+    this.stats.hacked++;
+    for (const o of this.units) if (o.target === u) o.target = null;
+    for (const b of this.buildings) if (b.target === u) b.target = null;
+    this.selection = this.selection.filter((e) => e.team === TEAM_PLAYER);
+    this.fx({ type: 'ring', x: u.x, y: u.y, size: 30, life: 0.6, color: '#c08cff' });
+    this.fx({ type: 'text', x: u.x, y: u.y, text: 'HACKED', life: 1.4, color: '#d9c2ff' });
+    this.notify(`${u.def.name} hacked and under your control`, 'good', null, 'hacked', 3);
+    this.sfx('upgrade', u.x, u.y);
   }
 
   // Idle player units near an attacked building move to defend it.
@@ -857,7 +1060,7 @@ export class Game {
     const st = b.st;
     b.flash = Math.max(0, b.flash - dt);
     if (!b.built) {
-      const t = this.timeOf(b.type, true);
+      const t = this.timeOf(b.type, true) / (b.team === TEAM_PLAYER ? this.prodSpeed : 1);
       b.progress += dt / t;
       b.hp = Math.min(st.maxHp, b.hp + st.maxHp * 0.92 * dt / t);
       if (b.progress >= 1) {
@@ -869,19 +1072,19 @@ export class Game {
       }
       return;
     }
-    if (st.regen && b.hp < st.maxHp) b.hp = Math.min(st.maxHp, b.hp + st.maxHp * st.regen * dt);
+    const regen = st.regen + (b.team === TEAM_PLAYER && this.overdrive() ? 0.02 : 0);
+    if (regen && b.hp < st.maxHp) b.hp = Math.min(st.maxHp, b.hp + st.maxHp * regen * dt);
     if (b.team === TEAM_ENEMY && this.time - b.lastHit > 15 && b.hp < st.maxHp) b.hp = Math.min(st.maxHp, b.hp + st.maxHp * 0.004 * dt);
 
     // production
     if (b.queue.length) {
       const q = b.queue[0];
-      const def = UNITS[q.type];
-      if (this.supplyUsed + def.supply > this.supplyCap) {
+      if (this.supplyUsed + this.supplyOf(q.type) > this.supplyCap + 1e-6) {
         q.blocked = true;
         this.notify('Supply cap reached — build a Logistics Hub', 'warn', null, 'supply', 12);
       } else {
         q.blocked = false;
-        q.t += dt;
+        q.t += dt * this.prodSpeed;
         if (q.t >= this.timeOf(q.type, false)) {
           b.queue.shift();
           this.produce(b, q.type);
@@ -896,9 +1099,14 @@ export class Game {
       if (b.def.jammer) this.jam(b, 0.25);
       if (b.def.repair) this.repairAround(b, 0.25);
     }
+    if (b.def.spawner) this.updateHiveBuilding(b, dt);
+    if (b.def.pulse) {
+      b.pulseT = (b.pulseT ?? 1) - dt;
+      if (b.pulseT <= 0) { b.pulseT = b.def.pulse.every; this.empPulse(b); }
+    }
 
     const w = b.def.weapon;
-    if (!w) return;
+    if (!w || b.stunUntil > this.time) return;
     b.cd -= dt;
     b.scanT -= dt;
     if (b.target && (b.target.dead || !this.inRange(b, b.target, st.range) || (b.team === TEAM_PLAYER && b.target.kind !== 'proj' && !this.isVisible(b.target)))) b.target = null;
@@ -916,6 +1124,43 @@ export class Game {
     }
   }
 
+  // Swarm Hive: prints free drones that guard the hive.
+  updateHiveBuilding(b, dt) {
+    const sp = b.def.spawner;
+    b.children ??= 0;
+    b.spawnT = (b.spawnT ?? 4) - dt * (1 + (this.mods.flags.hiveRate || 0));
+    if (b.spawnT > 0 || b.children >= sp.max) return;
+    b.spawnT = sp.every;
+    const u = this.spawnUnit(sp.unit, b.team, b.x + (this.rng() - 0.5) * 30, b.y + (this.rng() - 0.5) * 30);
+    u.spawned = true;
+    u.parent = b;
+    u.home = { x: b.x + (this.rng() - 0.5) * 120, y: b.y + (this.rng() - 0.5) * 120 };
+    u.order = { type: 'idle' };
+    b.children++;
+  }
+
+  stun(e, seconds) {
+    if (e.dead) return;
+    const until = this.time + seconds;
+    if (!(e.stunUntil > until)) e.stunUntil = until;
+    if (e.kind === 'unit') e.target = null;
+  }
+
+  // Disruptor Tower: periodic EMP that stuns nearby enemies.
+  empPulse(b) {
+    const P = b.def.pulse, r = P.radius * (b.st.radius || 1);
+    let hit = 0;
+    this.hash.query(b.x, b.y, r, (o) => {
+      if (o.team === b.team || o.dead || dist(b, o) > r) return;
+      this.stun(o, P.stun * b.st.stun);
+      hit++;
+    });
+    if (hit) {
+      this.fx({ type: 'ring', x: b.x, y: b.y, size: r, life: 0.5, color: '#c08cff' });
+      this.sfx('laser', b.x, b.y);
+    }
+  }
+
   produce(b, type) {
     const ty = b.ty + b.h;
     const t = this.path.nearestWalkable(b.tx + Math.floor(b.w / 2), ty, 8);
@@ -929,7 +1174,7 @@ export class Game {
   }
 
   jam(b, dt) {
-    const J = b.def.jammer, r = J.radius;
+    const J = b.def.jammer, r = J.radius * (b.st.radius || 1);
     this.hash.query(b.x, b.y, r, (o) => {
       if (o.team === b.team || o.dead || !o.air || o.kind !== 'unit') return;
       if (dist(b, o) > r) return;
@@ -951,11 +1196,22 @@ export class Game {
     }
   }
 
-  repairAround(b, dt) {
-    const R = b.def.repair;
-    this.hash.query(b.x, b.y, R.radius, (o) => {
-      if (o.team !== b.team || o.dead || o === b || dist(b, o) > R.radius) return;
+  // Heal friendly entities around `b` (a repair building or a healer unit).
+  // only: 'infantry' | 'air' | 'mech' (robots, vehicles and buildings)
+  healFilter(o, only) {
+    if (!only) return true;
+    if (only === 'infantry') return o.kind === 'unit' && o.def.cls === 'infantry';
+    if (only === 'air') return o.kind === 'unit' && o.air;
+    if (only === 'mech') return o.kind === 'building' || (o.kind === 'unit' && !o.air && o.def.cls !== 'infantry');
+    return true;
+  }
+
+  repairAround(b, dt, R = b.def.repair || b.def.healer) {
+    const radius = R.radius * (b.st.radius || 1);
+    this.hash.query(b.x, b.y, radius, (o) => {
+      if (o.team !== b.team || o.dead || o === b || dist(b, o) > radius) return;
       if (o.kind === 'building' && !o.built) return;
+      if (!this.healFilter(o, R.only)) return;
       if (o.hp < o.st.maxHp) {
         o.hp = Math.min(o.st.maxHp, o.hp + o.st.maxHp * R.rate * dt);
         if (this.rng() < 0.15) this.fx({ type: 'spark', x: o.x + (this.rng() - 0.5) * 16, y: o.y + (this.rng() - 0.5) * 16, life: 0.5, color: '#7dffb0' });
@@ -1082,6 +1338,15 @@ export class Game {
       }
     };
     for (const u of this.units) if (u.team === TEAM_PLAYER && !u.dead) mark(u.x, u.y, u.st.sight);
+    this.marked.fill(0);
+    for (const u of this.units) {
+      if (u.team !== TEAM_PLAYER || u.dead || !u.def.marker) continue;
+      const r = Math.round(u.st.sight / TILE), cx = Math.floor(u.x / TILE), cy = Math.floor(u.y / TILE);
+      for (const [ox, oy] of circleOffsets(r)) {
+        const tx = cx + ox, ty = cy + oy;
+        if (tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H) this.marked[ty * MAP_W + tx] = 1;
+      }
+    }
     for (const b of this.buildings) if (b.team === TEAM_PLAYER && !b.dead) mark(b.x, b.y, b.built ? b.st.sight : 96);
     for (const b of this.buildings) {
       if (b.team !== TEAM_ENEMY) continue;
@@ -1109,7 +1374,8 @@ export class Game {
   }
 
   waveBudget(n) {
-    return (WAVE.baseBudget * Math.pow(WAVE.growth, n - 1) + WAVE.linear * (n - 1)) * this.enemyShare() * (1 + 0.15 * this.escalation);
+    const cyber = 1 - 0.12 * (this.cyberCenters || 0);
+    return (WAVE.baseBudget * Math.pow(WAVE.growth, n - 1) + WAVE.linear * (n - 1)) * this.enemyShare() * (1 + 0.15 * this.escalation) * cyber;
   }
 
   waveComposition(n, budget = this.waveBudget(n), rng = mulberry32((this.gameSeed + n * 7919) >>> 0)) {
@@ -1228,6 +1494,14 @@ export class Game {
           const p = this.launchCruise({ x: silo.x, y: silo.y },
             t.x + (this.rng() - 0.5) * 2 * scatter, t.y + (this.rng() - 0.5) * 2 * scatter);
           p.delay = k * 0.6;
+          if (this.cyberCenters && this.rng() < 0.3) {
+            // guidance hacked by a Cyber Ops Center: the missile wanders off into the wilderness
+            const a = this.rng() * Math.PI * 2;
+            p.tx = Math.max(40, Math.min(MAP_W * TILE - 40, t.x + Math.cos(a) * 700));
+            p.ty = Math.max(40, Math.min(MAP_H * TILE - 40, t.y + Math.sin(a) * 700));
+            p.spoofed = true;
+            this.notify('Cyber Ops: missile guidance hijacked', 'good', null, 'cyberspoof', 6);
+          }
         }
         this.notify(`Missile launch detected! ${nMis} cruise missile${nMis > 1 ? 's' : ''} inbound`, 'danger', null, 'missile', 5);
         this.emit({ type: 'missile' });
@@ -1341,7 +1615,7 @@ export class Game {
 
   train(b, type) {
     const def = UNITS[type];
-    if (!b || b.dead || !b.built || !b.def.trains?.includes(type) || !this.isUnlocked(def)) return false;
+    if (!b || b.dead || !b.built || !this.trainsFor(b).includes(type) || !this.available(type)) return false;
     if (b.queue.length >= 6) return false;
     const cost = this.costOf(type, false);
     if (this.credits < cost) { this.notify('Not enough credits', 'warn', null, 'nocred', 1.5); return false; }

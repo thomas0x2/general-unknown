@@ -11,7 +11,6 @@ const TERRAIN_RGB = {
   [T_WATER]: [14, 36, 56],
   [T_ROCK]: [58, 60, 66],
 };
-const P0 = teamPalette(0), P1 = teamPalette(1);
 
 export class Renderer {
   constructor(canvas) {
@@ -331,9 +330,10 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(e.x, e.y, e.st.range + (e.kind === 'building' ? e.radius * 0.5 : 0), 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash([]);
       }
-      if (e.def.jammer || e.def.repair) {
-        const r = (e.def.jammer || e.def.repair).radius;
-        ctx.strokeStyle = e.def.jammer ? 'rgba(180,140,255,0.3)' : 'rgba(125,255,176,0.3)';
+      const aura = e.def.jammer || e.def.repair || e.def.healer || e.def.pulse;
+      if (aura) {
+        const r = aura.radius * (e.st.radius || 1);
+        ctx.strokeStyle = e.def.jammer || e.def.pulse ? 'rgba(180,140,255,0.3)' : 'rgba(125,255,176,0.3)';
         ctx.lineWidth = 1 / z; ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.stroke();
       }
     }
@@ -363,6 +363,7 @@ export class Renderer {
     this.pings = this.pings.filter((p) => p.t < p.life);
 
     if (this.placing) this.drawPlacement(ctx, g);
+    if (this.abilityAim) this.drawAbilityAim(ctx, g);
     if (this.moveMarker) {
       const m = this.moveMarker;
       m.t += dt;
@@ -393,6 +394,7 @@ export class Renderer {
     let color;
     if (team === 2) color = '#ffd76a';
     else if (team === 3) color = '#7fd1ff';
+    else if (team === 4) color = '#c08cff';
     else if (team === TEAM_ENEMY) color = '#ff5a45';
     else color = frac > 0.6 ? '#5fdc7a' : frac > 0.3 ? '#ffc93c' : '#ff5a45';
     ctx.fillStyle = color;
@@ -400,7 +402,7 @@ export class Renderer {
   }
 
   drawUnit(ctx, u) {
-    const P = u.team === TEAM_PLAYER ? P0 : P1;
+    const P = teamPalette(u.team === TEAM_PLAYER ? 0 : 1);
     ctx.save();
     const bob = u.air ? Math.sin(this.time * 3 + u.bob) * 1.5 : 0;
     ctx.translate(u.x, u.y + bob);
@@ -408,14 +410,27 @@ export class Renderer {
     ctx.rotate(u.angle);
     drawUnitShape(ctx, u.def.shape, P, this.time + u.bob, 1);
     ctx.restore();
+    if (u.stunUntil > this.game.time) this.drawStun(ctx, u.x, u.y, u.radius + 4);
+    if (u.hackPts > 0 && u.team === TEAM_ENEMY) this.drawBar(ctx, u.x, u.y + u.radius + 5, Math.max(16, u.radius * 2.2), u.hackPts / (u.st.maxHp * 0.6), 4);
     if (u.slowUntil > this.game.time) {
       ctx.strokeStyle = 'rgba(180,140,255,0.6)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(u.x, u.y, u.radius + 3 + Math.sin(this.time * 20), 0, Math.PI * 2); ctx.stroke();
     }
   }
 
+  drawStun(ctx, x, y, r) {
+    ctx.strokeStyle = 'rgba(192,140,255,0.85)'; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + this.time * 3;
+      const rr = r + (i % 2 ? 4 : -1) + Math.sin(this.time * 30 + i) * 2;
+      ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+
   drawBuilding(ctx, b, selected) {
-    const P = b.team === TEAM_PLAYER ? P0 : P1;
+    const P = teamPalette(b.team === TEAM_PLAYER ? 0 : 1);
     ctx.save();
     ctx.translate(b.tx * TILE, b.ty * TILE);
     if (!b.built) ctx.globalAlpha = 0.45 + 0.35 * b.progress;
@@ -429,6 +444,7 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.restore();
+    if (b.stunUntil > this.game.time) this.drawStun(ctx, b.x, b.y, b.radius);
     if (selected) {
       ctx.strokeStyle = 'rgba(120,255,170,0.9)'; ctx.lineWidth = 1.5 / this.cam.zoom + 0.5;
       ctx.strokeRect(b.tx * TILE - 2, b.ty * TILE - 2, b.w * TILE + 4, b.h * TILE + 4);
@@ -466,9 +482,9 @@ export class Renderer {
 
   drawEffects(ctx, g, onScreen, airLayer) {
     for (const e of g.effects) {
-      if (e.type === 'scorch' || !onScreen(e, 200)) continue;
+      if (e.type === 'scorch' || (e.type !== 'jet' && !onScreen(e, 200))) continue;
       const k = e.t / e.life;
-      if (airLayer !== (e.type === 'text' || !!e.air)) continue;
+      if (airLayer !== (e.type === 'text' || e.type === 'jet' || !!e.air)) continue;
       switch (e.type) {
         case 'tracer': {
           if (e.team === TEAM_ENEMY && !g.visibleAt(e.x, e.y) && !g.visibleAt(e.x2, e.y2)) break;
@@ -483,7 +499,7 @@ export class Renderer {
         }
         case 'beam': {
           if (e.team === TEAM_ENEMY && !g.visibleAt(e.x, e.y) && !g.visibleAt(e.x2, e.y2)) break;
-          const c = e.heavy ? '200,235,255' : e.team === TEAM_PLAYER ? '90,230,255' : '255,90,140';
+          const c = e.color || (e.heavy ? '200,235,255' : e.team === TEAM_PLAYER ? '90,230,255' : '255,90,140');
           ctx.strokeStyle = `rgba(${c},${0.35 * (1 - k)})`; ctx.lineWidth = e.heavy ? 9 : 5;
           ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x2, e.y2); ctx.stroke();
           ctx.strokeStyle = `rgba(255,255,255,${0.9 * (1 - k)})`; ctx.lineWidth = e.heavy ? 2.5 : 1.3;
@@ -500,6 +516,16 @@ export class Renderer {
           ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = `rgba(255,220,160,${0.5 * (1 - k)})`; ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.arc(e.x, e.y, e.size * (0.5 + k * 1.3), 0, Math.PI * 2); ctx.stroke();
+          break;
+        }
+        case 'jet': {
+          const x = e.x + (e.x2 - e.x) * k, y = e.y + (e.y2 - e.y) * k;
+          const ang = Math.atan2(e.y2 - e.y, e.x2 - e.x);
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          ctx.beginPath(); ctx.ellipse(x + 30, y + 50, 26, 12, ang, 0, Math.PI * 2); ctx.fill();
+          ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+          drawUnitShape(ctx, 'jet', teamPalette(0), this.time, 2.4);
+          ctx.restore();
           break;
         }
         case 'smoke':
@@ -530,7 +556,8 @@ export class Renderer {
     for (const s of g.sites) {
       const i = g.tileIdx(s.x, s.y);
       if (!g.explored[i]) continue;
-      const col = s.owner === TEAM_PLAYER ? '57,213,255' : s.owner === TEAM_ENEMY ? '255,77,58' : '216,194,106';
+      const pm = teamPalette(0).glow.match(/\d+/g);
+      const col = s.owner === TEAM_PLAYER ? `${pm[0]},${pm[1]},${pm[2]}` : s.owner === TEAM_ENEMY ? '255,77,58' : '216,194,106';
       ctx.fillStyle = `rgba(${col},0.08)`;
       ctx.beginPath(); ctx.arc(s.x, s.y, 3 * TILE, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = `rgba(${col},0.45)`; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
@@ -544,7 +571,7 @@ export class Renderer {
       }
       // capture progress
       if (Math.abs(s.progress) > 0.01 && Math.abs(s.progress) < 1) {
-        ctx.strokeStyle = s.progress > 0 ? '#39d5ff' : '#ff4d3a'; ctx.lineWidth = 4;
+        ctx.strokeStyle = s.progress > 0 ? teamPalette(0).main : '#ff4d3a'; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.arc(s.x, s.y, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.abs(s.progress)); ctx.stroke();
       }
     }
@@ -574,6 +601,27 @@ export class Renderer {
     }
   }
 
+  drawAbilityAim(ctx, g) {
+    const a = this.abilityAim, A = g.ability, z = this.cam.zoom;
+    const ok = g.explored[g.tileIdx(a.x, a.y)];
+    const col = ok ? teamPalette(0).main : '#ff4d3a';
+    ctx.strokeStyle = col; ctx.lineWidth = 2 / z; ctx.setLineDash([8 / z, 6 / z]);
+    ctx.fillStyle = ok ? teamPalette(0).glow.replace('0.35', '0.12') : 'rgba(255,77,58,0.12)';
+    if (A.id === 'airstrike') {
+      const ang = Math.atan2(a.y - g.hq.y, a.x - g.hq.x);
+      ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(ang);
+      ctx.fillRect(-A.length / 2, -A.radius, A.length, A.radius * 2);
+      ctx.strokeRect(-A.length / 2, -A.radius, A.length, A.radius * 2);
+      ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.arc(a.x, a.y, A.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.font = `bold ${12 / z}px sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(ok ? A.name.toUpperCase() : 'TARGET MUST BE SCOUTED', a.x, a.y - (A.id === 'airstrike' ? A.radius : A.radius) - 8 / z);
+    ctx.textAlign = 'start';
+  }
+
   drawPlacement(ctx, g) {
     const p = this.placing;
     if (p.tx == null) return;
@@ -582,7 +630,7 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = 0.6;
     ctx.translate(x, y);
-    drawBuildingShape(ctx, def.shape, P0, def.w, def.h, this.time, -Math.PI / 4);
+    drawBuildingShape(ctx, def.shape, teamPalette(0), def.w, def.h, this.time, -Math.PI / 4);
     ctx.restore();
     ctx.fillStyle = p.ok ? 'rgba(95,220,122,0.25)' : 'rgba(255,77,58,0.3)';
     ctx.strokeStyle = p.ok ? '#5fdc7a' : '#ff4d3a';
@@ -616,17 +664,17 @@ export class Renderer {
     const k = s / TILE;
     for (const site of g.sites) {
       if (!g.explored[g.tileIdx(site.x, site.y)]) continue;
-      mctx.fillStyle = site.owner === TEAM_PLAYER ? '#39d5ff' : site.owner === TEAM_ENEMY ? '#ff4d3a' : '#d8c26a';
+      mctx.fillStyle = site.owner === TEAM_PLAYER ? teamPalette(0).main : site.owner === TEAM_ENEMY ? '#ff4d3a' : '#d8c26a';
       mctx.beginPath(); mctx.arc(site.x * k, site.y * k, 2.5, 0, Math.PI * 2); mctx.fill();
     }
     for (const b of g.buildings) {
       if (b.dead || (b.team === TEAM_ENEMY && !b.discovered)) continue;
-      mctx.fillStyle = b.team === TEAM_PLAYER ? '#39d5ff' : '#ff4d3a';
+      mctx.fillStyle = b.team === TEAM_PLAYER ? teamPalette(0).main : '#ff4d3a';
       mctx.fillRect(b.tx * s, b.ty * s, Math.max(2, b.w * s), Math.max(2, b.h * s));
     }
     for (const u of g.units) {
       if (u.team === TEAM_ENEMY && !g.isVisible(u)) continue;
-      mctx.fillStyle = u.team === TEAM_PLAYER ? '#9ff0ff' : '#ff7a66';
+      mctx.fillStyle = u.team === TEAM_PLAYER ? teamPalette(0).light : '#ff7a66';
       mctx.fillRect(u.x * k - 1, u.y * k - 1, 2, 2);
     }
     for (const p of g.projectiles) {

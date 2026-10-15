@@ -81,13 +81,38 @@ export class Input {
 
   setMode(m) {
     this.mode = m;
-    this.canvas.classList.toggle('amove', m === 'amove');
+    this.canvas.classList.toggle('amove', m === 'amove' || m === 'ability');
+    if (m !== 'ability') this.R.abilityAim = null;
+  }
+
+  // Commander ability: untargeted abilities fire at once, targeted ones enter aim mode.
+  triggerAbility() {
+    const g = this.game;
+    if (!g || !this.active) return;
+    if (g.ability.cd > 0) {
+      this.app.ui.notice(`${g.ability.name} recharging (${Math.ceil(g.ability.cd)}s)`, 'warn');
+      this.app.audio.play('error');
+      return;
+    }
+    if (!g.ability.target) { this.fireAbility(0, 0); return; }
+    this.stopPlacing();
+    this.setMode(this.mode === 'ability' ? null : 'ability');
+  }
+
+  fireAbility(x, y) {
+    const r = this.game.useAbility(x, y);
+    if (!r.ok) {
+      if (r.reason) this.app.ui.notice(r.reason, 'warn');
+      this.app.audio.play('error');
+      return false;
+    }
+    this.setMode(null);
+    return true;
   }
 
   startPlacing(type) {
     if (!this.game) return;
-    const def = BUILDINGS[type];
-    if (!this.game.isUnlocked(def)) return;
+    if (!this.game.isUnlocked(type)) return;
     this.placing = { type };
     this.R.placing = this.placing;
     this.setMode(null);
@@ -132,6 +157,7 @@ export class Input {
       if (!e.shiftKey) this.stopPlacing();
       return;
     }
+    if (this.mode === 'ability') { this.fireAbility(w.x, w.y); return; }
     if (this.mode === 'amove') {
       const t = this.pick(w.x, w.y);
       const units = this.myUnits();
@@ -263,6 +289,7 @@ export class Input {
     if (key === 'Tab') { e.preventDefault(); return; }
     if (lower === 'm' && !e.ctrlKey) { ui.toggleMute(); return; }
     if (lower === 't') { ui.openResearch(); return; }
+    if (lower === 'g') { this.triggerAbility(); return; }
     if (key === '+' || key === '=') { this.app.setSpeed(Math.min(3, this.app.speed + 1)); return; }
     if (key === '-' || key === '_') { this.app.setSpeed(Math.max(1, this.app.speed - 1)); return; }
     if (key === ' ') {
@@ -323,6 +350,7 @@ export class Input {
     }
     if (dx || dy) { R.cam.x += dx; R.cam.y += dy; R.clampCam(); }
     if (this.placing) this.updatePlacing();
+    if (this.mode === 'ability') { const w = this.worldMouse(); R.abilityAim = { x: w.x, y: w.y }; }
     if (this.overCanvas) {
       const w = this.worldMouse();
       R.hover = this.pick(w.x, w.y);
