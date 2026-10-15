@@ -303,6 +303,10 @@ export function drawBuildingShape(ctx, shape, P, w, h, t = 0, angle = 0, opts = 
     rrect(ctx, inset + 3, inset + 4, W - inset * 2, H - inset * 2, 5); ctx.fill();
     ctx.fillStyle = P.body;
     rrect(ctx, inset, inset, W - inset * 2, H - inset * 2, 5); ctx.fill();
+    // light from the north-west across the roof
+    const lit = ctx.createLinearGradient(0, 0, W, H);
+    lit.addColorStop(0, 'rgba(255,255,255,0.10)'); lit.addColorStop(0.5, 'rgba(255,255,255,0)'); lit.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = lit; ctx.fill();
     ctx.strokeStyle = P.main; ctx.lineWidth = 1.6; ctx.globalAlpha *= 0.9; ctx.stroke(); ctx.globalAlpha /= 0.9;
     // panel lines
     ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;

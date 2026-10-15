@@ -96,17 +96,17 @@ Progress is saved in your browser's `localStorage`.
 
 | Input | Action |
 | --- | --- |
+| `W` `A` `S` `D` / arrows | Move along the map (hold `Shift` to move faster); screen edges, middle-drag and the minimap also work, mouse wheel zooms |
 | Left click / drag | Select (Shift adds, double-click or Ctrl+click selects all of a type on screen) |
 | Right click | Move / attack; with a production building selected: set rally point |
-| `A` + click | Attack-move |
-| `S` / `D` (or `H`) | Stop / hold position |
-| `Q W E R / A S D F / Z X C V` | Command card (train units, commands, `V` recycles a building) |
+| `Q` + click | Attack-move |
+| `E` / `R` (or `H`) | Stop / hold position |
+| `Q E R F T / Z X C V B` | Command card (train units, commands, `B` recycles a building) |
 | Build panel | Click a structure, then click the map (Shift to place several) |
 | `Ctrl+1-9` / `1-9` | Assign / recall control group (double-tap to jump the camera) |
 | `Ctrl+A` | Select the whole army |
-| Arrows, screen edges, middle drag, minimap | Move the camera; mouse wheel zooms |
 | `Space` | Jump to the latest alert |
-| `T` | Open research |
+| `Tab` | Open research |
 | `G` | Commander ability (targeted abilities: then click scouted ground) |
 | `P`, `Esc` | Pause, command menu (time machine, research log) |
 | `+` / `-`, `M` | Game speed, mute |

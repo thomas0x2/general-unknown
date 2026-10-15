@@ -13,7 +13,8 @@ export const fmtTime = (s) => {
   s = Math.max(0, Math.floor(s));
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
-const CARD_KEYS = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
+// Command card hotkeys (5×2 grid). W A S D are reserved for the camera.
+const CARD_KEYS = ['Q', 'E', 'R', 'F', 'T', 'Z', 'X', 'C', 'V', 'B'];
 const TARGETS = { ground: 'Ground', air: 'Air', both: 'Ground + Air' };
 
 // Icon for a Chrono Lab node: the first unit or structure it unlocks.
@@ -49,23 +50,23 @@ const MANUAL = `
 <h3>Objectives</h3>
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
-<li><b>Research.</b> Your research program produces random upgrades of five rarities. Press <kbd>T</kbd> when a breakthrough is ready.</li>
+<li><b>Research.</b> Your research program produces random upgrades of five rarities. Press <kbd>Tab</kbd> when a breakthrough is ready.</li>
 <li><b>Scout.</b> The map is covered by fog of war. Drones and radar reveal it. Capture <b>rare-earth sites</b> (stand troops on them) for extra income and grab <b>supply caches</b>.</li>
 <li><b>Strike back.</b> Find the enemy and destroy their <b>Forward Outposts</b> (waves launch from them) and base <b>facilities</b> — each one permanently weakens the enemy for this timeline. Destroying <b>Hegemony Command</b> wins the war.</li>
 </ul>
 <h3>Controls</h3>
 <table>
 <tr><td>Left click / drag</td><td>Select units (drag a box). Shift adds to selection. Double-click selects all of a type on screen.</td></tr>
+<tr><td>W A S D / arrows</td><td>Move along the map (hold Shift to move faster). Screen edges, middle-drag and the minimap also work; the mouse wheel zooms.</td></tr>
 <tr><td>Right click</td><td>Move / attack. With a production building selected: set rally point.</td></tr>
-<tr><td>A + click</td><td>Attack-move: advance and engage everything on the way.</td></tr>
-<tr><td>S / D (or H)</td><td>Stop / hold position.</td></tr>
-<tr><td>Q W E R / A S D F / Z X C V</td><td>Command card hotkeys (training units, commands).</td></tr>
+<tr><td>Q + click</td><td>Attack-move: advance and engage everything on the way.</td></tr>
+<tr><td>E / R (or H)</td><td>Stop / hold position.</td></tr>
+<tr><td>Q E R F T / Z X C V B</td><td>Command card hotkeys (training units, commands; B recycles a building).</td></tr>
 <tr><td>Build panel (right)</td><td>Click a structure, then click the map. Shift-click to place several. Right click / Esc cancels.</td></tr>
 <tr><td>Ctrl + 1-9 / 1-9</td><td>Assign / recall control groups (press twice to jump the camera).</td></tr>
 <tr><td>Ctrl + A</td><td>Select your whole army.</td></tr>
-<tr><td>Arrows / screen edge / middle drag</td><td>Pan the camera. Mouse wheel zooms. Click the minimap to jump.</td></tr>
 <tr><td>Space</td><td>Jump to the latest alert (or your HQ).</td></tr>
-<tr><td>T</td><td>Open the research program.</td></tr>
+<tr><td>Tab</td><td>Open the research program.</td></tr>
 <tr><td>G</td><td>Commander ability (then click a scouted target if it needs one).</td></tr>
 <tr><td>P / Esc</td><td>Pause / command menu. <kbd>+</kbd> <kbd>-</kbd> change game speed, <kbd>M</kbd> mutes.</td></tr>
 </table>
@@ -527,14 +528,14 @@ export class UI {
 
   buildSlots(sel) {
     const g = this.game;
-    const slots = new Array(12).fill(null);
+    const slots = new Array(CARD_KEYS.length).fill(null);
     if (!sel.length) return slots;
     const mine = sel.filter((e) => e.team === TEAM_PLAYER);
     const units = mine.filter((e) => e.kind === 'unit');
     if (units.length) {
-      slots[4] = { id: 'amove', html: '<span class="glyph">⌖</span><span>Attack-move</span>', run: () => this.app.input.setMode('amove') };
-      slots[5] = { id: 'stop', html: '<span class="glyph">■</span><span>Stop</span>', run: () => g.orderStop(units) };
-      slots[6] = { id: 'hold', html: '<span class="glyph">⛊</span><span>Hold</span>', run: () => g.orderHold(units) };
+      slots[0] = { id: 'amove', html: '<span class="glyph">⌖</span><span>Attack-move</span>', run: () => this.app.input.setMode('amove') };
+      slots[1] = { id: 'stop', html: '<span class="glyph">■</span><span>Stop</span>', run: () => g.orderStop(units) };
+      slots[2] = { id: 'hold', html: '<span class="glyph">⛊</span><span>Hold</span>', run: () => g.orderHold(units) };
       return slots;
     }
     const b = mine.length === 1 && mine[0].kind === 'building' ? mine[0] : null;
@@ -553,7 +554,7 @@ export class UI {
       }
     }
     if (b.type !== 'hq') {
-      slots[11] = {
+      slots[CARD_KEYS.length - 1] = {
         id: 'sell', cls: 'danger', html: '<span class="glyph">♻</span><span>Recycle</span>',
         run: () => {
           if (this.app.now - this.sellArm < 2.5) { g.sell(b); this.sellArm = -Infinity; this.cardSig = ''; }
@@ -586,7 +587,7 @@ export class UI {
     if (!sel.length) {
       html = `<div class="empty-sel"><b>No selection.</b> Drag to select units · right-click to move or attack · build from the panel on the right.<br>` +
         `Wave ${g.wave.n + 1} arrives in <b>${fmtTime(g.wave.next - g.time)}</b>. Research: <b>${g.researchRate().toFixed(2)}</b>/s.` +
-        `${g.research.ready ? ' <b style="color:var(--violet)">Breakthrough ready — press T.</b>' : ''}</div>`;
+        `${g.research.ready ? ' <b style="color:var(--violet)">Breakthrough ready — press Tab.</b>' : ''}</div>`;
     } else if (sel.length === 1) {
       html = this.entityInfo(sel[0]);
     } else {
@@ -692,10 +693,10 @@ export class UI {
           (locked ? this.lockNote(s.train) : '');
       }
       return {
-        amove: '<h5>Attack-move <kbd>A</kbd></h5><p>Then click: units advance and engage every hostile on the way.</p>',
-        stop: '<h5>Stop <kbd>S</kbd></h5><p>Cancel orders. Units will still defend themselves.</p>',
-        hold: '<h5>Hold position <kbd>D</kbd></h5><p>Units stay put and only fire at targets in range.</p>',
-        sell: '<h5>Recycle <kbd>V</kbd></h5><p>Dismantle for 50% of the cost (scaled by damage). Under-construction buildings are fully refunded. Press twice to confirm.</p>',
+        amove: '<h5>Attack-move <kbd>Q</kbd></h5><p>Then click: units advance and engage every hostile on the way.</p>',
+        stop: '<h5>Stop <kbd>E</kbd></h5><p>Cancel orders. Units will still defend themselves.</p>',
+        hold: '<h5>Hold position <kbd>R</kbd> or <kbd>H</kbd></h5><p>Units stay put and only fire at targets in range.</p>',
+        sell: '<h5>Recycle <kbd>B</kbd></h5><p>Dismantle for 50% of the cost (scaled by damage). Under-construction buildings are fully refunded. Press twice to confirm.</p>',
       }[s.id] || '';
     }
     if (el.dataset.node) {

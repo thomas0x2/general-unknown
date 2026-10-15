@@ -412,7 +412,7 @@ export class Game {
       R.level++;
       R.ready++;
       R.needed = RESEARCH.first * Math.pow(RESEARCH.growth, R.level);
-      this.notify('Research breakthrough ready — press T to choose an upgrade', 'good', null, 'research', 2);
+      this.notify('Research breakthrough ready — press Tab to choose an upgrade', 'good', null, 'research', 2);
       this.sfx('research');
     }
   }

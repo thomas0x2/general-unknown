@@ -53,6 +53,15 @@ await page.waitForTimeout(300);
 const hq = await page.evaluate(() => { const g = window.app.game; return window.app.renderer.toScreen(g.hq.x, g.hq.y); });
 await page.mouse.click(hq.x, hq.y);
 await page.keyboard.press('q');
+// WASD pans the camera
+const cam0 = await page.evaluate(() => ({ ...window.app.renderer.cam }));
+await page.keyboard.down('d'); await page.keyboard.down('s');
+await page.waitForTimeout(400);
+await page.keyboard.up('d'); await page.keyboard.up('s');
+await page.waitForTimeout(300);
+const cam1 = await page.evaluate(() => ({ ...window.app.renderer.cam }));
+if (!(cam1.x > cam0.x + 40 && cam1.y > cam0.y + 40)) errors.push(`WASD did not pan the camera (${JSON.stringify(cam0)} -> ${JSON.stringify(cam1)})`);
+await page.evaluate(([x, y]) => { window.app.renderer.cam.x = x; window.app.renderer.cam.y = y; }, [cam0.x, cam0.y]);
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${out}/04-hq-selected.png` });
 // box select starting units & move them
@@ -67,7 +76,7 @@ await page.evaluate(() => { const g = window.app.game; for (let i = 0; i < 30 * 
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/05-wave1.png` });
 await page.evaluate(() => { const g = window.app.game; g.research.ready = Math.max(1, g.research.ready); });
-await page.keyboard.press('t');
+await page.keyboard.press('Tab');
 await page.waitForTimeout(700);
 await page.screenshot({ path: `${out}/06-research.png` });
 await page.keyboard.press('1');

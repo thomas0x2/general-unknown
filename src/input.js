@@ -33,7 +33,7 @@ export class Input {
     window.addEventListener('mouseout', (e) => { if (!e.relatedTarget) this.mouse.inside = false; });
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     window.addEventListener('keydown', (e) => this.onKey(e));
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key));
+    window.addEventListener('keyup', (e) => { this.keys.delete(e.code); this.keys.delete(e.key); });
     window.addEventListener('blur', () => this.keys.clear());
 
     const mm = document.getElementById('minimap');
@@ -260,7 +260,7 @@ export class Input {
     if (!this.game || this.game.over) return;
     // modals first
     if (ui.researchOpen) {
-      if (key === 'Escape') ui.closeResearch();
+      if (key === 'Escape' || key === 'Tab') ui.closeResearch();
       else if (/^[1-9]$/.test(key)) ui.pickCard(+key - 1);
       else if (key.toLowerCase() === 'r' && !e.ctrlKey) document.getElementById('btn-reroll').click();
       e.preventDefault();
@@ -274,8 +274,9 @@ export class Input {
       if (key === 'Escape' || key === 'p' || key === 'P') ui.closePause();
       return;
     }
-    this.keys.add(key);
+    this.keys.add(e.code);
     const g = this.game;
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) return; // camera
     const lower = key.toLowerCase();
 
     if (key === 'Escape') {
@@ -286,9 +287,8 @@ export class Input {
       return;
     }
     if (lower === 'p' || key === 'Pause') { this.app.togglePause(); return; }
-    if (key === 'Tab') { e.preventDefault(); return; }
+    if (key === 'Tab') { e.preventDefault(); ui.openResearch(); return; }
     if (lower === 'm' && !e.ctrlKey) { ui.toggleMute(); return; }
-    if (lower === 't') { ui.openResearch(); return; }
     if (lower === 'g') { this.triggerAbility(); return; }
     if (key === '+' || key === '=') { this.app.setSpeed(Math.min(3, this.app.speed + 1)); return; }
     if (key === '-' || key === '_') { this.app.setSpeed(Math.max(1, this.app.speed - 1)); return; }
@@ -326,7 +326,6 @@ export class Input {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     // unit shortcuts
     if (this.myUnits().length) {
-      if (lower === 'a') { this.setMode('amove'); return; }
       if (lower === 'h') { g.orderHold(this.myUnits()); return; }
     }
     if (key.length === 1 && ui.hotkey(key)) e.preventDefault();
@@ -335,20 +334,33 @@ export class Input {
   update(dt) {
     if (!this.game) return;
     const R = this.R;
-    const sp = 900 * dt / R.cam.zoom;
-    let dx = 0, dy = 0;
-    if (this.keys.has('ArrowLeft')) dx -= sp;
-    if (this.keys.has('ArrowRight')) dx += sp;
-    if (this.keys.has('ArrowUp')) dy -= sp;
-    if (this.keys.has('ArrowDown')) dy += sp;
+    const k = this.keys;
+    let ix = 0, iy = 0;
+    const typing = this.app.modal;
+    if (!typing) {
+      if (k.has('KeyA') || k.has('ArrowLeft')) ix -= 1;
+      if (k.has('KeyD') || k.has('ArrowRight')) ix += 1;
+      if (k.has('KeyW') || k.has('ArrowUp')) iy -= 1;
+      if (k.has('KeyS') || k.has('ArrowDown')) iy += 1;
+    }
     const edge = 6;
     if (this.mouse.inside && !this.pan && !this.drag && document.hasFocus()) {
-      if (this.mouse.x <= edge) dx -= sp;
-      if (this.mouse.x >= R.view.w - edge) dx += sp;
-      if (this.mouse.y <= edge) dy -= sp;
-      if (this.mouse.y >= R.view.h - edge) dy += sp;
+      if (this.mouse.x <= edge) ix -= 1;
+      if (this.mouse.x >= R.view.w - edge) ix += 1;
+      if (this.mouse.y <= edge) iy -= 1;
+      if (this.mouse.y >= R.view.h - edge) iy += 1;
     }
-    if (dx || dy) { R.cam.x += dx; R.cam.y += dy; R.clampCam(); }
+    // eased camera velocity: quick to start, glides to a stop
+    const len = Math.hypot(ix, iy) || 1;
+    const top = (k.has('ShiftLeft') || k.has('ShiftRight') ? 1700 : 950) / R.cam.zoom;
+    const tx = (ix / len) * top, ty = (iy / len) * top;
+    this.vel ??= { x: 0, y: 0 };
+    const ease = 1 - Math.exp(-dt * (ix || iy ? 14 : 9));
+    this.vel.x += (tx - this.vel.x) * ease;
+    this.vel.y += (ty - this.vel.y) * ease;
+    if (Math.abs(this.vel.x) > 1 || Math.abs(this.vel.y) > 1) {
+      R.cam.x += this.vel.x * dt; R.cam.y += this.vel.y * dt; R.clampCam();
+    } else { this.vel.x = 0; this.vel.y = 0; }
     if (this.placing) this.updatePlacing();
     if (this.mode === 'ability') { const w = this.worldMouse(); R.abilityAim = { x: w.x, y: w.y }; }
     if (this.overCanvas) {
