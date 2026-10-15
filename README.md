@@ -67,6 +67,8 @@ already played (or whose milestone your records already meet) stays unlocked.
   Harpy strike drones, Hive carriers that launch FPV swarms).
 - **Waves** launch every 75 seconds and grow exponentially. From wave 4 the enemy also fires
   **cruise missiles** at your buildings; intercept them or lose your base.
+- **Repair** damaged buildings for credits (3% HP per second, paid as you go), one at a time with `N`
+  or base-wide with the auto-repair switch. The Forge Union repairs at half price.
 - Capture **rare-earth sites** for income and grab **supply caches** scattered in the fog.
 - Your **research program** periodically produces a breakthrough: pick one of three random upgrades
   rolled at **Common / Uncommon / Rare / Epic / Legendary** rarity. Legendaries include unique effects
@@ -92,6 +94,13 @@ time survived). Spend them in three branches:
 
 Progress is saved in your browser's `localStorage`.
 
+## Music
+
+The soundtrack is generated live in the browser: a D-minor step sequencer with synth pads, a
+galloping bass, arpeggios, a brass-like lead and martial drums. It starts quietly in the menus,
+builds up during a timeline, goes to full percussion when enemies close on your base, and peaks
+when your HQ is in danger. Toggle it with the ♫ button or `Shift+M`.
+
 ## Controls
 
 | Input | Action |
@@ -101,15 +110,16 @@ Progress is saved in your browser's `localStorage`.
 | Right click | Move / attack; with a production building selected: set rally point |
 | `Q` + click | Attack-move |
 | `E` / `R` (or `H`) | Stop / hold position |
-| `Q E R F T / Z X C V B` | Command card (train units, commands, `B` recycles a building) |
+| `Q E R F T Y / Z X C V B N` | Command card (train units, commands, `B` recycles, `N` repairs a building) |
 | Build panel | Click a structure, then click the map (Shift to place several) |
 | `Ctrl+1-9` / `1-9` | Assign / recall control group (double-tap to jump the camera) |
 | `Ctrl+A` | Select the whole army |
 | `Space` | Jump to the latest alert |
+| `N` | Repair the selected building (credits over time); the build panel has an auto-repair switch |
 | `Tab` | Open research |
 | `G` | Commander ability (targeted abilities: then click scouted ground) |
 | `P`, `Esc` | Pause, command menu (time machine, research log) |
-| `+` / `-`, `M` | Game speed, mute |
+| `+` / `-`, `M`, `Shift+M` | Game speed, mute all, music on/off |
 
 ## Project layout
 
@@ -125,6 +135,7 @@ src/render.js           canvas renderer (terrain, units, effects, fog, minimap)
 src/shapes.js           vector art for every unit and structure
 src/ui.js, input.js     HUD, menus, research drafts, controls
 src/audio.js            synthesized sound effects (WebAudio, no assets)
+src/music.js            generative, battle-reactive soundtrack (WebAudio step sequencer)
 tools/                  dev server and single-file bundler
 tests/                  headless simulation tests + browser smoke test
 ```

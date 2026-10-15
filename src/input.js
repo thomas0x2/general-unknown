@@ -288,6 +288,7 @@ export class Input {
     }
     if (lower === 'p' || key === 'Pause') { this.app.togglePause(); return; }
     if (key === 'Tab') { e.preventDefault(); ui.openResearch(); return; }
+    if (lower === 'm' && e.shiftKey) { ui.toggleMusic(); return; }
     if (lower === 'm' && !e.ctrlKey) { ui.toggleMute(); return; }
     if (lower === 'g') { this.triggerAbility(); return; }
     if (key === '+' || key === '=') { this.app.setSpeed(Math.min(3, this.app.speed + 1)); return; }

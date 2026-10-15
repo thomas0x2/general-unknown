@@ -209,7 +209,7 @@ export const FACTIONS = {
     doctrine: 'Industrial Might',
     motto: 'Outbuild. Outlast.',
     desc: 'A heavy-industry powerhouse with fully automated factories. Its soldiers are few, but its assembly lines never stop.',
-    playstyle: ['Buildings 20% cheaper with +15% HP that slowly self-repair', 'Production and construction +30%, Fabricators +40% income', 'Unique: Repair Crawlers, Juggernauts, Arms Foundry, Bastion', 'Ability: Overdrive'],
+    playstyle: ['Buildings 20% cheaper with +15% HP, self-repair, and half-price repairs', 'Production and construction +30%, Fabricators +40% income', 'Unique: Repair Crawlers, Juggernauts, Arms Foundry, Bastion', 'Ability: Overdrive'],
     difficulty: 1,
     unlock: { stat: 'buildings', need: 40, text: 'Complete 40 structures', hint: 'Build enough to impress the Commonwealth\'s industrialists.' },
     emblem: 'juggernaut',
@@ -241,6 +241,7 @@ export const FACTIONS = {
       addMod(m, 'build', 'all', 0.3);
       addMod(m, 'cost', 'robot', 0.1);
       addMod(m, 'dmg', 'infantry', -0.1);
+      g.repairCostMult = 0.5;
     },
     ability: {
       id: 'overdrive', name: 'Overdrive', cooldown: 110, target: false, duration: 20,

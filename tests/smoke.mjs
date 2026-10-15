@@ -8,7 +8,7 @@ const out = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[
 const useDist = process.argv.includes('--dist');
 fs.mkdirSync(out, { recursive: true });
 const server = await serve(5199, useDist ? 'dist' : '.');
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -62,6 +62,18 @@ await page.waitForTimeout(300);
 const cam1 = await page.evaluate(() => ({ ...window.app.renderer.cam }));
 if (!(cam1.x > cam0.x + 40 && cam1.y > cam0.y + 40)) errors.push(`WASD did not pan the camera (${JSON.stringify(cam0)} -> ${JSON.stringify(cam1)})`);
 await page.evaluate(([x, y]) => { window.app.renderer.cam.x = x; window.app.renderer.cam.y = y; }, [cam0.x, cam0.y]);
+// repair: damage the HQ, select it and press N
+await page.evaluate(() => { const g = window.app.game; g.credits = 5000; g.hq.hp = g.hq.st.maxHp * 0.6; g.selection = [g.hq]; const R = window.app.renderer; R.cam.x = g.hq.x; R.cam.y = g.hq.y; });
+await page.waitForTimeout(200);
+await page.keyboard.press('n');
+const repairing = await page.evaluate(() => window.app.game.hq.repairing);
+if (!repairing) errors.push('N did not start repairing the HQ');
+await page.evaluate(() => { const g = window.app.game; for (let i = 0; i < 30; i++) g.step(1 / 30); });
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/04b-repair.png` });
+const music = await page.evaluate(() => ({ started: window.app.music.started, intensity: window.app.music.intensity, state: window.app.audio.ctx?.state }));
+if (!music.started) errors.push('music did not start after user input: ' + JSON.stringify(music));
+console.log('music', JSON.stringify(music));
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${out}/04-hq-selected.png` });
 // box select starting units & move them

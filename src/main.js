@@ -4,6 +4,7 @@ import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
+import { Music } from './music.js';
 import { loadMeta, saveMeta, computeReward, encodeMemory, getProfile, isFactionUnlocked, unlockWatchList, recordMilestones } from './meta.js';
 import { FACTIONS } from './factions.js';
 import { setPlayerColor } from './shapes.js';
@@ -17,6 +18,12 @@ class App {
     this.factionId = FACTIONS[this.meta.faction] && isFactionUnlocked(this.meta, this.meta.faction) ? this.meta.faction : 'valdara';
     this.applyFactionLook();
     this.audio = new Audio();
+    this.music = new Music(this.audio);
+    try { this.autoRepair = localStorage.getItem('gu-autorepair') === '1'; } catch { this.autoRepair = false; }
+    // browsers only allow audio after a user gesture: start the score on the first one
+    const kick = () => { this.music.start(); window.removeEventListener('pointerdown', kick); window.removeEventListener('keydown', kick); };
+    window.addEventListener('pointerdown', kick);
+    window.addEventListener('keydown', kick);
     this.renderer = new Renderer(document.getElementById('world'));
     this.game = null;
     this.speed = 1;
@@ -61,6 +68,7 @@ class App {
     this.saveMeta();
     this.game = new Game({ profile: m, faction: this.factionId, seed: m.seed, escalation: m.escalation });
     this.game.unlockWatch = unlockWatchList(this.meta);
+    this.game.autoRepair = this.autoRepair;
     this.renderer.setGame(this.game);
     this.renderer.resize();
     this.renderer.clampCam();
@@ -81,6 +89,28 @@ class App {
   }
 
   togglePause() { this.paused = !this.paused; }
+
+  setAutoRepair(on) {
+    this.autoRepair = on;
+    if (this.game) this.game.autoRepair = on;
+    try { localStorage.setItem('gu-autorepair', on ? '1' : '0'); } catch { /* ignore */ }
+  }
+
+  // Music intensity follows the battle: calm → enemies near the base → HQ in danger.
+  musicIntensity() {
+    const g = this.game;
+    if (!g || g.over) return 0;
+    const hq = g.hq;
+    let near = 0;
+    for (const u of g.units) {
+      if (u.team !== 1 || u.garrison || u.dead) continue;
+      if (Math.hypot(u.x - hq.x, u.y - hq.y) < 1500) near++;
+    }
+    const recentHit = g.buildings.some((b) => b.team === 0 && g.time - b.lastHit < 6);
+    if ((near || recentHit) && hq.hp < hq.st.maxHp * 0.4) return 3;
+    if (near >= 3 || recentHit) return 2;
+    return 1;
+  }
 
   endRun() {
     const g = this.game;
@@ -118,6 +148,8 @@ class App {
       this.input.update(dt);
       this.renderer.draw(running ? dt : 0);
       this.ui.update(dt);
+      this.musicT = (this.musicT || 0) - dt;
+      if (this.musicT <= 0) { this.musicT = 1; this.music.setIntensity(this.musicIntensity()); }
       if (g.over && this.overAt == null) {
         this.overAt = this.now;
         this.input.stopPlacing();
@@ -133,6 +165,7 @@ class App {
         document.getElementById('flash').hidden = true;
         this.endRun();
         this.game = null;
+        this.music.setIntensity(0);
         this.overShown = false;
       }
     }

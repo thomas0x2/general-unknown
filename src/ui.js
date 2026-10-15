@@ -13,8 +13,9 @@ export const fmtTime = (s) => {
   s = Math.max(0, Math.floor(s));
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
-// Command card hotkeys (5×2 grid). W A S D are reserved for the camera.
-const CARD_KEYS = ['Q', 'E', 'R', 'F', 'T', 'Z', 'X', 'C', 'V', 'B'];
+// Command card hotkeys (6×2 grid). W A S D are reserved for the camera.
+const CARD_KEYS = ['Q', 'E', 'R', 'F', 'T', 'Y', 'Z', 'X', 'C', 'V', 'B', 'N'];
+const SLOT_SELL = 10, SLOT_REPAIR = 11;
 const TARGETS = { ground: 'Ground', air: 'Air', both: 'Ground + Air' };
 
 // Icon for a Chrono Lab node: the first unit or structure it unlocks.
@@ -61,13 +62,15 @@ const MANUAL = `
 <tr><td>Right click</td><td>Move / attack. With a production building selected: set rally point.</td></tr>
 <tr><td>Q + click</td><td>Attack-move: advance and engage everything on the way.</td></tr>
 <tr><td>E / R (or H)</td><td>Stop / hold position.</td></tr>
-<tr><td>Q E R F T / Z X C V B</td><td>Command card hotkeys (training units, commands; B recycles a building).</td></tr>
+<tr><td>Q E R F T Y / Z X C V B N</td><td>Command card hotkeys (training units, commands; B recycles and N repairs a building).</td></tr>
 <tr><td>Build panel (right)</td><td>Click a structure, then click the map. Shift-click to place several. Right click / Esc cancels.</td></tr>
 <tr><td>Ctrl + 1-9 / 1-9</td><td>Assign / recall control groups (press twice to jump the camera).</td></tr>
 <tr><td>Ctrl + A</td><td>Select your whole army.</td></tr>
 <tr><td>Space</td><td>Jump to the latest alert (or your HQ).</td></tr>
 <tr><td>Tab</td><td>Open the research program.</td></tr>
 <tr><td>G</td><td>Commander ability (then click a scouted target if it needs one).</td></tr>
+<tr><td>N</td><td>Repair the selected building (costs credits over time). The build panel has an auto-repair switch for your whole base.</td></tr>
+<tr><td>Shift + M</td><td>Music on/off.</td></tr>
 <tr><td>P / Esc</td><td>Pause / command menu. <kbd>+</kbd> <kbd>-</kbd> change game speed, <kbd>M</kbd> mutes.</td></tr>
 </table>
 <h3>Combat notes</h3>
@@ -138,8 +141,11 @@ export class UI {
     $('btn-info-close').onclick = () => { $('modal-info').hidden = true; };
     for (const b of document.querySelectorAll('[data-speed]')) b.onclick = () => this.app.setSpeed(+b.dataset.speed);
     $('btn-mute').textContent = this.app.audio.muted ? '✕' : '♪';
+    for (const id of ['btn-music', 'btn-music-title']) $(id).onclick = () => this.toggleMusic();
+    this.syncMusicButtons();
 
     $('buildpanel').addEventListener('click', (e) => {
+      if (e.target.closest('#btn-autorepair')) { this.app.setAutoRepair(!this.game.autoRepair); this.click(); this.renderBuildPanel(); return; }
       const btn = e.target.closest('[data-build]');
       if (!btn || btn.classList.contains('locked')) return;
       this.app.input.startPlacing(btn.dataset.build);
@@ -193,6 +199,18 @@ export class UI {
   }
 
   click() { this.app.audio.play('click'); }
+  toggleMusic() {
+    this.app.music.toggle();
+    this.syncMusicButtons();
+  }
+
+  syncMusicButtons() {
+    const on = this.app.music.enabled;
+    $('btn-music').classList.toggle('off', !on);
+    $('btn-music-title').textContent = on ? '♫ Music on' : '♫ Music off';
+    $('btn-music-title').classList.toggle('off', !on);
+  }
+
   toggleMute() { $('btn-mute').textContent = this.app.audio.toggleMute() ? '✕' : '♪'; }
 
   // ---------------------------------------------------------------- screens
@@ -399,7 +417,8 @@ export class UI {
       const locked = !g.available(t);
       return `<button class="bbtn ${locked ? 'locked' : ''}" data-build="${t}"><img src="${iconFor('building', def)}" alt=""><span class="nm">${def.name}</span><span class="cost">${locked ? '🔒' : g.costOf(t, true)}</span></button>`;
     }).join('');
-    $('buildpanel').innerHTML = sec('BASE', 'base') + sec('DEFENSE', 'defense');
+    $('buildpanel').innerHTML = `<button id="btn-autorepair" class="autorepair ${g.autoRepair ? 'on' : ''}" data-tip="autorepair">🔧 Auto-repair <b>${g.autoRepair ? 'ON' : 'OFF'}</b></button>` +
+      sec('BASE', 'base') + sec('DEFENSE', 'defense');
   }
 
   banner(text, sub = '') {
@@ -523,6 +542,11 @@ export class UI {
       if (!s) return;
       if (s.cost != null) btns[i].classList.toggle('poor', g.credits < s.cost());
       if (s.id === 'sell') btns[i].querySelector('.glyph + span').textContent = this.app.now - this.sellArm < 2.5 ? 'CONFIRM?' : 'Recycle';
+      if (s.id === 'repair') {
+        const b = g.selection[0];
+        btns[i].classList.toggle('on', !!b?.repairing);
+        btns[i].querySelector('.glyph + span').textContent = b?.repairing ? 'Repairing' : b && b.hp >= b.st.maxHp ? 'Intact' : 'Repair';
+      }
     });
   }
 
@@ -553,8 +577,14 @@ export class UI {
         };
       }
     }
+    if (b.built) {
+      slots[SLOT_REPAIR] = {
+        id: 'repair', html: '<span class="glyph">🔧</span><span>Repair</span>',
+        run: () => { g.toggleRepair(b); this.click(); },
+      };
+    }
     if (b.type !== 'hq') {
-      slots[CARD_KEYS.length - 1] = {
+      slots[SLOT_SELL] = {
         id: 'sell', cls: 'danger', html: '<span class="glyph">♻</span><span>Recycle</span>',
         run: () => {
           if (this.app.now - this.sellArm < 2.5) { g.sell(b); this.sellArm = -Infinity; this.cardSig = ''; }
@@ -633,6 +663,9 @@ export class UI {
       const o = e.order.type;
       extra = `<div class="hint">${{ idle: 'Standing by', move: 'Moving', amove: 'Attack-moving', attack: 'Attacking target', hold: 'Holding position' }[o] || o}${e.target ? ' · engaging' : ''}</div>`;
     }
+    if (e.kind === 'building' && !hostile && e.built && g.wantsRepair(e) && e.hp < e.st.maxHp) {
+      stats.push(`<span style="color:var(--good)">REPAIRING <b>${e.repairActive ? `−${(e.st.maxHp * 0.03 * g.repairCostPerHp(e)).toFixed(1)} cr/s` : 'paused: no credits'}</b></span>`);
+    }
     if (e.kind === 'building' && !hostile) {
       if (!e.built) extra = `<div class="hint">Under construction: ${Math.floor(e.progress * 100)}%</div>`;
       else if (e.def.trains) {
@@ -668,6 +701,14 @@ export class UI {
     return parts.join(' · ');
   }
 
+  repairTip() {
+    const g = this.game, b = g?.selection[0];
+    if (!b || b.kind !== 'building') return '';
+    const full = Math.ceil((b.st.maxHp - b.hp) * g.repairCostPerHp(b));
+    const rate = (b.st.maxHp * 0.03 * g.repairCostPerHp(b)).toFixed(1);
+    return `<h5>Repair <kbd>N</kbd></h5><div class="tt-cost">${full ? `${full} credits to fully repair · ${rate} credits/s` : 'Undamaged'}</div><p>Restores 3% of max HP per second, paid as you go. Stops when the building is fully repaired or you run out of credits. Press again to cancel.</p>${g.faction.id === 'forge' ? '<p>Forge Union repairs cost half.</p>' : ''}`;
+  }
+
   lockNote(id) {
     const node = nodeById(this.game.faction.id, this.game.locks[id]);
     return `<div class="tt-lock">🔒 Unlock in the ${this.game.faction.short} Chrono Lab: ${node?.name || '?'}</div>`;
@@ -696,6 +737,7 @@ export class UI {
         amove: '<h5>Attack-move <kbd>Q</kbd></h5><p>Then click: units advance and engage every hostile on the way.</p>',
         stop: '<h5>Stop <kbd>E</kbd></h5><p>Cancel orders. Units will still defend themselves.</p>',
         hold: '<h5>Hold position <kbd>R</kbd> or <kbd>H</kbd></h5><p>Units stay put and only fire at targets in range.</p>',
+        repair: this.repairTip(),
         sell: '<h5>Recycle <kbd>B</kbd></h5><p>Dismantle for 50% of the cost (scaled by damage). Under-construction buildings are fully refunded. Press twice to confirm.</p>',
       }[s.id] || '';
     }
@@ -723,6 +765,8 @@ export class UI {
       case 'timeline': return '<h5>Timeline</h5><p>How many times you have looped, and how long this one has lasted.</p>';
       case 'pause': return '<h5>Pause <kbd>P</kbd></h5>';
       case 'mute': return '<h5>Sound <kbd>M</kbd></h5>';
+      case 'autorepair': return '<h5>Auto-repair</h5><p>When on, every damaged building repairs itself automatically (3% HP per second, paid in credits as it goes). Repair a single building with <kbd>N</kbd>.</p>';
+      case 'music': return `<h5>Music <kbd>Shift</kbd>+<kbd>M</kbd></h5><p>${this.app.music.enabled ? 'On' : 'Off'}. The score follows the battle: it builds up as waves approach and goes all-out when your HQ is in danger.</p>`;
       case 'ability': {
         const A = g.ability;
         return `<h5>${A.name} <kbd>G</kbd></h5><div class="tt-cost">Cooldown ${Math.round(g.abilityCooldown())}s${A.cd > 0 ? ` · ready in ${Math.ceil(A.cd)}s` : ' · READY'}</div><p>${A.desc}</p>${A.target ? '<p>Click a target in scouted territory after pressing G.</p>' : ''}`;

@@ -556,6 +556,7 @@ export class Renderer {
       const show = sel.has(b) || this.hover === b || b.hp < b.st.maxHp * 0.999 || !b.built;
       if (show && (b.team === TEAM_PLAYER || b.visible)) this.drawBar(ctx, b.x, b.y - b.h * TILE / 2 - 6, b.w * TILE * 0.8, b.hp / b.st.maxHp, b.team);
       if (!b.built) this.drawBar(ctx, b.x, b.y - b.h * TILE / 2 - 1, b.w * TILE * 0.8, b.progress, 2);
+      if (b.team === TEAM_PLAYER && (b.repairActive || b.repairing)) this.drawRepairIcon(ctx, b);
       if (b.queue?.length) this.drawBar(ctx, b.x, b.y + b.h * TILE / 2 + 4, b.w * TILE * 0.7, b.queue[0].t / g.timeOf(b.queue[0].type, false), 3);
     }
     for (const u of g.units) {
@@ -661,6 +662,24 @@ export class Renderer {
       ctx.strokeStyle = 'rgba(180,140,255,0.6)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(u.x, u.y, u.radius + 3 + Math.sin(this.time * 20), 0, Math.PI * 2); ctx.stroke();
     }
+  }
+
+  // Spinning wrench badge on buildings under repair (dimmed when repairs are paused for credits).
+  drawRepairIcon(ctx, b) {
+    const x = b.tx * TILE + b.w * TILE - 4, y = b.ty * TILE + 4;
+    const z = this.cam.zoom, r = 8 / Math.max(0.7, z);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = b.repairActive ? 0.75 + Math.sin(this.time * 6) * 0.25 : 0.45;
+    ctx.fillStyle = 'rgba(8,24,14,0.9)'; ctx.strokeStyle = '#7dffb0'; ctx.lineWidth = 1.5 / z;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.rotate(b.repairActive ? Math.sin(this.time * 5) * 0.5 - 0.6 : -0.6);
+    ctx.fillStyle = '#7dffb0';
+    ctx.fillRect(-r * 0.12, -r * 0.15, r * 0.24, r * 0.75);
+    ctx.beginPath(); ctx.arc(0, -r * 0.35, r * 0.32, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(8,24,14,1)';
+    ctx.fillRect(-r * 0.1, -r * 0.7, r * 0.2, r * 0.32);
+    ctx.restore();
   }
 
   drawStun(ctx, x, y, r) {

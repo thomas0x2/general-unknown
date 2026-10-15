@@ -10,6 +10,8 @@ import { applyMeta, unlockedSet, decodeMemory } from './meta.js';
 import { FACTIONS, lockMap } from './factions.js';
 
 export const BUILD_RADIUS = 9; // tiles from an existing building
+export const REPAIR_RATE = 0.03; // fraction of max HP restored per second while repairing
+const REPAIR_COST = 0.5; // a full repair from zero costs this fraction of the building's price
 const FOG_INTERVAL = 0.2;
 const MAX_WAVE_UNITS = 90;
 
@@ -86,6 +88,8 @@ export class Game {
     this.ability = { ...this.faction.ability, cd: 30, activeUntil: 0 };
     this.pending = []; // scheduled ability effects
     this.prodSpeed = 1;
+    this.autoRepair = false;
+    this.repairCostMult ??= 1;
 
     const N = MAP_W * MAP_H;
     this.vis = new Uint8Array(N);
@@ -97,7 +101,7 @@ export class Game {
 
     this.wave = { n: 0, next: WAVE.first, lastSpawn: null };
     this.missileT = 30;
-    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0, infantry: 0, drones: 0 };
+    this.stats = { kills: 0, lost: 0, outposts: 0, facilities: 0, built: 0, trained: 0, earned: 0, hacked: 0, infantry: 0, drones: 0, repaired: 0 };
     this.unlockWatch = []; // locked factions to announce mid-run: { id, name, stat, need, have }
     this.throttles = new Map();
     this.income = 0; this.supplyUsed = 0; this.supplyCap = 0;
@@ -1075,6 +1079,7 @@ export class Game {
       }
       return;
     }
+    if (b.team === TEAM_PLAYER) this.updateRepair(b, dt);
     const regen = st.regen + (b.team === TEAM_PLAYER && this.overdrive() ? 0.02 : 0);
     if (regen && b.hp < st.maxHp) b.hp = Math.min(st.maxHp, b.hp + st.maxHp * regen * dt);
     if (b.team === TEAM_ENEMY && this.time - b.lastHit > 15 && b.hp < st.maxHp) b.hp = Math.min(st.maxHp, b.hp + st.maxHp * 0.004 * dt);
@@ -1125,6 +1130,39 @@ export class Game {
       b.angle = lerpAngle(b.angle, angleTo(b, b.target), dt * 8);
       if (b.cd <= 0) { this.fire(b, b.target); b.cd = st.cd; }
     }
+  }
+
+  // ----- repair: buildings regain HP over time in exchange for credits
+  repairCostPerHp(b) {
+    const basis = b.type === 'hq' ? 900 : Math.max(100, b.paid ?? this.costOf(b.type, true));
+    return (REPAIR_COST * basis * this.repairCostMult) / b.st.maxHp;
+  }
+
+  wantsRepair(b) { return b.repairing || (this.autoRepair && b.hp < b.st.maxHp); }
+
+  updateRepair(b, dt) {
+    b.repairActive = false;
+    if (!this.wantsRepair(b)) return;
+    const missing = b.st.maxHp - b.hp;
+    if (missing <= 0.01) { b.repairing = false; return; }
+    const amount = Math.min(missing, b.st.maxHp * REPAIR_RATE * dt);
+    const cost = amount * this.repairCostPerHp(b);
+    if (this.credits < cost) {
+      this.notify('Not enough credits to continue repairs', 'warn', null, 'repaircash', 10);
+      return;
+    }
+    this.credits -= cost;
+    this.stats.repaired += cost;
+    b.hp += amount;
+    b.repairActive = true;
+    if (this.rng() < dt * 4) this.fx({ type: 'spark', x: b.tx * TILE + this.rng() * b.w * TILE, y: b.ty * TILE + this.rng() * b.h * TILE, life: 0.6, color: '#7dffb0' });
+    if (b.hp >= b.st.maxHp - 0.01) { b.hp = b.st.maxHp; if (b.repairing) { b.repairing = false; this.sfx('built', b.x, b.y); } }
+  }
+
+  toggleRepair(b) {
+    if (!b || b.dead || b.team !== TEAM_PLAYER || !b.built) return false;
+    b.repairing = !b.repairing && b.hp < b.st.maxHp;
+    return b.repairing;
   }
 
   // Swarm Hive: prints free drones that guard the hive.

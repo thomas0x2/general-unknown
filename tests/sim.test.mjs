@@ -171,6 +171,37 @@ test('commands: build, train, move, sell', () => {
   assert.ok(g.credits > c0);
 });
 
+test('buildings can be repaired for credits', () => {
+  const g = new Game({ profile: defaultProfile(), seed: 44 });
+  const hq = g.hq;
+  hq.hp = hq.st.maxHp * 0.5;
+  g.credits = 10000;
+  assert.ok(g.toggleRepair(hq), 'repair starts on a damaged building');
+  const h0 = hq.hp;
+  for (let i = 0; i < 30 * 5; i++) g.step(1 / 30);
+  const healed = hq.hp - h0, spent = g.stats.repaired;
+  assert.ok(healed > hq.st.maxHp * 0.13 && healed < hq.st.maxHp * 0.17, `heals ~3%/s (${healed})`);
+  assert.ok(spent > healed * g.repairCostPerHp(hq) * 0.8, 'repair costs credits');
+  for (let i = 0; i < 30 * 30; i++) g.step(1 / 30);
+  assert.equal(hq.hp, hq.st.maxHp, 'fully repaired');
+  assert.ok(!hq.repairing, 'manual repair switches off when done');
+  assert.ok(!g.toggleRepair(hq), 'cannot start repair on an intact building');
+  // runs out of money
+  hq.hp = hq.st.maxHp * 0.5; g.credits = 0;
+  g.toggleRepair(hq);
+  const h1 = hq.hp;
+  for (let i = 0; i < 30 * 2; i++) { g.credits = 0; g.step(1 / 30); }
+  assert.ok(hq.hp - h1 < 1, 'no repair without credits');
+  // auto-repair handles everything that is damaged
+  hq.repairing = false;
+  g.autoRepair = true; g.credits = 10000;
+  for (let i = 0; i < 30 * 3; i++) g.step(1 / 30);
+  assert.ok(hq.hp > h1 + 100, 'auto-repair works');
+  // Forge repairs cost half
+  const f = new Game({ profile: defaultProfile(), faction: 'forge', seed: 44 });
+  assert.ok(Math.abs(f.repairCostPerHp(f.hq) * 2 - g.repairCostPerHp(g.hq) * (g.hq.st.maxHp / f.hq.st.maxHp)) < 1e-9, 'forge discount');
+});
+
 test('fabricator cost scales with count', () => {
   const g = new Game({ profile: defaultProfile(), seed: 77 });
   g.credits = 5000;
