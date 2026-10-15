@@ -118,7 +118,7 @@ await page.evaluate(() => { const g = window.app.game; for (let i = 0; i < 30 * 
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${out}/08-late.png` });
 // cross the Iron Guard milestone, then end the run via the time machine
-await page.evaluate(() => { const g = window.app.game; g.stats.infantry += 60; });
+await page.evaluate(() => { const g = window.app.game; g.stats.infantry += 300; window.app.meta.milestones.bestWave = 12; });
 await page.waitForTimeout(1500);
 await page.evaluate(() => window.app.game && !window.app.game.over && window.app.game.retreat());
 await page.waitForTimeout(5000);

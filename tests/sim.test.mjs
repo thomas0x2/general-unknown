@@ -253,7 +253,7 @@ test('separate save profiles and v1 migration', () => {
   assert.equal(m.profiles.valdara.chronons, 77);
   assert.equal(m.profiles.valdara.levels.d_hp, 2);
   assert.ok(m.seenIntro);
-  assert.ok(isFactionUnlocked(m, 'skyrep'), 'old best wave 9 unlocks the Sky Republic on migration');
+  assert.ok(!isFactionUnlocked(m, 'skyrep'), 'an old best wave of 9 is nowhere near enough any more');
   assert.ok(!isFactionUnlocked(m, 'swarm'));
   m.unlocked.push('swarm'); // pretend it was earned
   getProfile(m, 'swarm').chronons = 30;
@@ -266,23 +266,42 @@ test('separate save profiles and v1 migration', () => {
   assert.ok(defaultMeta().profiles);
 });
 
-test('factions unlock through lifetime milestones', () => {
+test('factions unlock through hard, chained milestones', () => {
   const meta = defaultMeta();
   for (const fid of FACTION_ORDER) assert.equal(isFactionUnlocked(meta, fid), fid === 'valdara', `${fid} initial lock state`);
-  // a timeline that trains 30 infantry and 30 drones, builds 25 structures, kills one outpost, reaches wave 6
-  const fake = { stats: { infantry: 30, drones: 30, built: 25, outposts: 1 }, wave: { n: 6 } };
-  let fresh = recordMilestones(meta, fake);
-  assert.deepEqual(fresh, ['swarm']);
-  assert.equal(unlockProgress(meta, 'ironguard').have, 30);
-  fresh = recordMilestones(meta, { stats: { infantry: 25, drones: 0, built: 20, outposts: 1 }, wave: { n: 9 } });
-  assert.deepEqual(fresh.sort(), ['forge', 'ghostnet', 'ironguard', 'skyrep']);
-  assert.ok(FACTION_ORDER.every((fid) => isFactionUnlocked(meta, fid)));
+  const run = (o) => ({ stats: { infantry: 0, drones: 0, built: 0, outposts: 0, facilities: 0, ...o.stats }, wave: { n: o.wave || 5 } });
+  // a decent timeline unlocks nothing
+  assert.deepEqual(recordMilestones(meta, run({ stats: { infantry: 40, drones: 20, built: 30, outposts: 1 }, wave: 9 })), []);
+  assert.equal(unlockProgress(meta, 'ironguard').goals[0].have, 40);
+  // lifetime goals accumulate, but wave 12 is still required
+  for (let i = 0; i < 7; i++) recordMilestones(meta, run({ stats: { infantry: 40 }, wave: 8 }));
+  assert.ok(!isFactionUnlocked(meta, 'ironguard'), '300 infantry alone is not enough');
+  assert.deepEqual(recordMilestones(meta, run({ wave: 12 })), ['ironguard']);
+  // Swarm needs Iron Guard (done) + 200 drones + 3 outposts over a career
+  for (let i = 0; i < 9; i++) recordMilestones(meta, run({ stats: { drones: 20 } }));
+  assert.ok(!isFactionUnlocked(meta, 'swarm'));
+  recordMilestones(meta, run({ stats: { outposts: 1 } }));
+  assert.deepEqual(recordMilestones(meta, run({ stats: { outposts: 1 } })), ['swarm']);
+  // Sky Republic: Forge first, then wave 18 and both outposts in one timeline
+  recordMilestones(meta, run({ stats: { outposts: 1 }, wave: 18 }));
+  assert.ok(!isFactionUnlocked(meta, 'skyrep'), 'requires Forge Union first');
+  for (let i = 0; i < 10; i++) recordMilestones(meta, run({ stats: { built: 25 } }));
+  assert.ok(isFactionUnlocked(meta, 'forge'));
+  assert.ok(!isFactionUnlocked(meta, 'skyrep'), 'outposts must fall in the same timeline');
+  assert.deepEqual(recordMilestones(meta, run({ stats: { outposts: 2 } })), ['skyrep']);
+  // Ghostnet: wave 22 + 3 facilities in a single timeline
+  recordMilestones(meta, run({ stats: { facilities: 2 }, wave: 22 }));
+  recordMilestones(meta, run({ stats: { facilities: 2 } }));
+  assert.ok(!isFactionUnlocked(meta, 'ghostnet'), 'facility kills do not add up across timelines');
+  assert.deepEqual(recordMilestones(meta, run({ stats: { facilities: 3 } })), ['ghostnet']);
   assert.equal(unlockWatchList(meta).length, 0);
 });
 
-test('a running timeline announces unlocks as soon as a milestone is crossed', () => {
+test('a running timeline announces unlocks as soon as the last goal is met', () => {
   const meta = defaultMeta();
-  meta.milestones.drones = 29;
+  meta.unlocked.push('ironguard');
+  meta.milestones.drones = 199;
+  meta.milestones.outposts = 3;
   const g = new Game({ profile: defaultProfile(), seed: 21 });
   g.unlockWatch = unlockWatchList(meta);
   g.credits = 9999;
@@ -298,7 +317,7 @@ test('a running timeline announces unlocks as soon as a milestone is crossed', (
     g.events.length = 0;
   }
   assert.ok(seen, 'swarm unlock announced mid-run');
-  assert.equal(g.stats.drones, 1);
+  assert.ok(!g.unlockWatch.find((w) => w.id === 'ghostnet').announced, 'chained faction not announced');
 });
 
 const results = {};

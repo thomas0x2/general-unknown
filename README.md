@@ -39,22 +39,23 @@ chronons, Chrono Lab unlocks and records are tracked separately per faction.
 
 ### Unlocking factions
 
-You start with the Valdaran Defense Force. The other nations join the alliance when you hit lifetime
-milestones, counted across every timeline with any faction:
+You start with the Valdaran Defense Force. Every other nation has to be earned with two demanding
+goals; the later ones also require other factions first. "Lifetime" goals add up across every
+timeline with any faction; "one timeline" goals must be achieved within a single run.
 
-| Faction | Unlock |
-| --- | --- |
-| Iron Guard | Train 50 infantry units |
-| Swarm Collective | Build 30 drones |
-| Ghostnet Directorate | Destroy 2 Forward Outposts |
-| Forge Union | Complete 40 structures |
-| Sky Republic | Reach wave 9 |
+| Faction | Requires | Goals |
+| --- | --- | --- |
+| Iron Guard | — | Train 300 infantry units (lifetime) · Reach wave 12 |
+| Forge Union | — | Complete 250 structures (lifetime) · Reach wave 12 |
+| Swarm Collective | Iron Guard | Build 200 drones (lifetime) · Destroy 3 Forward Outposts (lifetime) |
+| Sky Republic | Forge Union | Reach wave 18 · Destroy both Forward Outposts in one timeline |
+| Ghostnet Directorate | Swarm Collective + Sky Republic | Reach wave 22 · Destroy 3 enemy base facilities in one timeline |
 
-Locked factions show their progress on the faction screen. You're alerted mid-run the moment a
-milestone is crossed, and the new faction is revealed at the end of that timeline.
+Locked factions show each goal's progress on the faction screen. You're alerted mid-run the moment
+the last goal is met, and the new faction is revealed at the end of that timeline.
 
-Saves from before factions existed are migrated into the Valdaran profile; any faction you've
-already played (or whose milestone your records already meet) stays unlocked.
+Saves from before factions existed are migrated into the Valdaran profile. Factions you already
+unlocked or played under the earlier, easier rules stay unlocked.
 
 ## How it works
 

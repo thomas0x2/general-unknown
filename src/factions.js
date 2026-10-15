@@ -67,7 +67,13 @@ export const FACTIONS = {
     desc: 'A mountain nation with universal conscription. It cannot afford machines, but it can field more troops per square kilometer than anyone alive.',
     playstyle: ['Infantry 20% cheaper, 25% faster to train, +10% HP', '+8 supply; drones cost 20% more; no robots', 'Unique: Grenadiers, Shock Troopers, Medics, Mortars, Field Hospital', 'Ability: Mass Mobilization'],
     difficulty: 1,
-    unlock: { stat: 'infantry', need: 50, text: 'Train 50 infantry units', hint: 'Prove you can raise an army from the ground up.' },
+    unlock: {
+      hint: 'The Cantons only trust a general who has bled alongside the infantry.',
+      goals: [
+        { stat: 'infantry', need: 300, text: 'Train 300 infantry units' },
+        { stat: 'bestWave', need: 12, text: 'Reach wave 12' },
+      ],
+    },
     emblem: 'shock',
     start: ['rifle', 'rifle', 'rifle', 'grenadier', 'recon'],
     units: ['rifle', 'grenadier', 'at_team', 'medic', 'manpads', 'mortar', 'shock', 'sniper', 'exo', 'recon', 'fpv'],
@@ -118,7 +124,14 @@ export const FACTIONS = {
     difficulty: 2,
     hqTrains: ['rifle', 'recon', 'fpv'],
     supplyMult: { drone: 0.5 },
-    unlock: { stat: 'drones', need: 30, text: 'Build 30 drones', hint: 'Show the Collective what drones can do.' },
+    unlock: {
+      requires: ['ironguard'],
+      hint: 'Lumen will only release its swarms to a proven veteran who can take the fight forward.',
+      goals: [
+        { stat: 'drones', need: 200, text: 'Build 200 drones' },
+        { stat: 'outposts', need: 3, text: 'Destroy 3 Forward Outposts' },
+      ],
+    },
     emblem: 'wasp',
     start: ['rifle', 'recon', 'wasp', 'wasp', 'wasp'],
     units: ['rifle', 'manpads', 'recon', 'fpv', 'wasp', 'stinger', 'bomber', 'harpy', 'hive'],
@@ -165,7 +178,14 @@ export const FACTIONS = {
     desc: 'A small, wired nation whose real army lives in its networks. It hacks, jams and stuns the Hegemony\'s machines and turns their robots and drones against them.',
     playstyle: ['Hackers convert enemy vehicles, robots and drones', 'Research +20%, sight +15%, EW range +30%; units deal 10% less damage', 'Unique: Hacker Cells, EMP Drones, Cyber Ops Center, Disruptor Tower', 'Ability: Network Breach'],
     difficulty: 3,
-    unlock: { stat: 'outposts', need: 2, text: 'Destroy 2 Forward Outposts', hint: 'Breach the Hegemony\'s front line to earn Aster\'s trust.' },
+    unlock: {
+      requires: ['swarm', 'skyrep'],
+      hint: 'Aster\'s Directorate reveals itself only to a commander who has struck the Hegemony at its heart.',
+      goals: [
+        { stat: 'bestWave', need: 22, text: 'Reach wave 22' },
+        { stat: 'facilitiesRun', need: 3, text: 'Destroy 3 enemy base facilities in one timeline' },
+      ],
+    },
     emblem: 'empdrone',
     start: ['rifle', 'rifle', 'hacker', 'recon'],
     units: ['rifle', 'at_team', 'hacker', 'sniper', 'recon', 'empdrone', 'dog', 'mule', 'aegis'],
@@ -211,7 +231,13 @@ export const FACTIONS = {
     desc: 'A heavy-industry powerhouse with fully automated factories. Its soldiers are few, but its assembly lines never stop.',
     playstyle: ['Buildings 20% cheaper with +15% HP, self-repair, and half-price repairs', 'Production and construction +30%, Fabricators +40% income', 'Unique: Repair Crawlers, Juggernauts, Arms Foundry, Bastion', 'Ability: Overdrive'],
     difficulty: 1,
-    unlock: { stat: 'buildings', need: 40, text: 'Complete 40 structures', hint: 'Build enough to impress the Commonwealth\'s industrialists.' },
+    unlock: {
+      hint: 'The Commonwealth\'s industrialists back only commanders who build on a grand scale.',
+      goals: [
+        { stat: 'buildings', need: 250, text: 'Complete 250 structures' },
+        { stat: 'bestWave', need: 12, text: 'Reach wave 12' },
+      ],
+    },
     emblem: 'juggernaut',
     start: ['rifle', 'dog', 'dog', 'recon'],
     units: ['rifle', 'at_team', 'recon', 'fpv', 'dog', 'mule', 'crawler', 'aegis', 'titan', 'juggernaut'],
@@ -264,7 +290,14 @@ export const FACTIONS = {
     desc: 'An island nation that could never match a continental army on the ground, so it invested everything in aircraft. Fast, hard-hitting and expensive.',
     playstyle: ['Aircraft +15% HP, +10% speed and damage; Airbase 25% cheaper; +150 starting credits', 'Anti-air defenses +25% range; ground infantry 10% weaker', 'Unique: Attack Helicopters, Tiltrotors, Strike Fighters, AWACS', 'Ability: Air Strike'],
     difficulty: 2,
-    unlock: { stat: 'bestWave', need: 9, text: 'Reach wave 9', hint: 'Hold out long enough for Meridia\'s air fleet to cross the sea.' },
+    unlock: {
+      requires: ['forge'],
+      hint: 'Meridia\'s air fleet needs a long-held front line before it will commit.',
+      goals: [
+        { stat: 'bestWave', need: 18, text: 'Reach wave 18' },
+        { stat: 'outpostsRun', need: 2, text: 'Destroy both Forward Outposts in one timeline' },
+      ],
+    },
     emblem: 'fighter',
     start: ['rifle', 'rifle', 'manpads', 'recon'],
     units: ['rifle', 'at_team', 'manpads', 'recon', 'harpy', 'helo', 'tiltrotor', 'fighter', 'awacs'],
@@ -303,15 +336,19 @@ export const FACTIONS = {
   },
 };
 
-export const FACTION_ORDER = ['valdara', 'ironguard', 'swarm', 'ghostnet', 'forge', 'skyrep'];
+// Listed in unlock order: two independent starts, then the chains.
+export const FACTION_ORDER = ['valdara', 'ironguard', 'forge', 'swarm', 'skyrep', 'ghostnet'];
 
 // Lifetime milestone stats (shared by all factions) and how a finished timeline adds to them.
+// mode 'sum' accumulates over every timeline; 'max' must be achieved within a single timeline.
 export const MILESTONES = {
   infantry: { label: 'infantry trained', fromRun: (g) => g.stats.infantry, mode: 'sum' },
   drones: { label: 'drones built', fromRun: (g) => g.stats.drones, mode: 'sum' },
   buildings: { label: 'structures completed', fromRun: (g) => g.stats.built, mode: 'sum' },
   outposts: { label: 'outposts destroyed', fromRun: (g) => g.stats.outposts, mode: 'sum' },
   bestWave: { label: 'best wave', fromRun: (g) => g.wave.n, mode: 'max' },
+  outpostsRun: { label: 'outposts in one timeline', fromRun: (g) => g.stats.outposts, mode: 'max' },
+  facilitiesRun: { label: 'facilities in one timeline', fromRun: (g) => g.stats.facilities, mode: 'max' },
 };
 
 // id -> arsenal node id required to use it (anything absent is available from the start)

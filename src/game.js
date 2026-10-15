@@ -1568,12 +1568,15 @@ export class Game {
 
   // Announce a faction unlock the moment this run pushes a lifetime milestone over the line.
   checkUnlocks() {
-    for (const w of this.unlockWatch) {
-      if (w.announced) continue;
-      const run = w.fromRun(this);
-      const total = w.mode === 'max' ? Math.max(w.have, run) : w.have + run;
-      if (total >= w.need) {
+    const reached = (w) => w.goals.every((g) => (g.mode === 'max' ? Math.max(g.have, g.fromRun(this)) : g.have + g.fromRun(this)) >= g.need);
+    const done = new Set(this.unlockWatch.filter((w) => w.announced).map((w) => w.id));
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const w of this.unlockWatch) {
+        if (w.announced || !w.requires.every((r) => done.has(r)) || !reached(w)) continue;
         w.announced = true;
+        done.add(w.id);
+        changed = true;
         this.notify(`Faction unlocked: ${w.name}! Available from your next timeline.`, 'good');
         this.sfx('research');
       }

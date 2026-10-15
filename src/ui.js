@@ -3,7 +3,7 @@ import {
   UNITS, BUILDINGS, BUILD_ORDER, ARMOR_NAMES, WAVE, TEAM_PLAYER, TEAM_ENEMY, ENEMY_UNITS,
 } from './data.js';
 import { iconFor, emblemFor } from './shapes.js';
-import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode, isFactionUnlocked, unlockProgress } from './meta.js';
+import { BRANCHES, metaNodesFor, nodeById, getProfile, level, nodeCost, nodeAvailable, buyNode, isFactionUnlocked, unlockProgress, unlockSummary } from './meta.js';
 import { FACTIONS, FACTION_ORDER } from './factions.js';
 import { describeCard } from './upgrades.js';
 
@@ -47,7 +47,7 @@ const MANUAL = `
 <h2>GENERAL UNKNOWN</h2>
 <p>You command the military of a small nation against the overwhelming forces of the Hegemony. Waves of enemy troops, armor and drones will come for your <b>Command HQ</b>. When it falls, the timeline collapses — and the time machine sends you back to the start, with <b>Chronons</b> to spend in the Chrono Lab on permanent upgrades.</p>
 <h3>Factions</h3>
-<p>Six allied nations can hold the line, each with its own doctrine, units, structures, research cards and commander ability, and each keeps its own save: chronons and Chrono Lab unlocks are earned per faction. You start with Valdara; the other nations join as you hit lifetime milestones with any faction (train infantry, build drones, complete structures, destroy outposts, survive waves). The faction screen shows what each one needs. Valdara fights with combined arms; Iron Guard drowns the enemy in infantry; the Swarm Collective fields cheap drones by the hundred; Ghostnet hacks and stuns the Hegemony's machines and steals them; the Forge Union outbuilds everyone; the Sky Republic rules the air.</p>
+<p>Six allied nations can hold the line, each with its own doctrine, units, structures, research cards and commander ability, and each keeps its own save: chronons and Chrono Lab unlocks are earned per faction. You start with Valdara; the other nations must be earned. Each needs two demanding goals (some counted over your whole career with any faction, some to be achieved within a single timeline), and the later ones require other factions first. The faction screen shows what each one needs. Valdara fights with combined arms; Iron Guard drowns the enemy in infantry; the Swarm Collective fields cheap drones by the hundred; Ghostnet hacks and stuns the Hegemony's machines and steals them; the Forge Union outbuilds everyone; the Sky Republic rules the air.</p>
 <h3>Objectives</h3>
 <ul>
 <li><b>Survive.</b> Every wave you survive earns Chronons. Waves grow stronger forever.</li>
@@ -266,10 +266,13 @@ export class UI {
         <div class="fac-motto">“${f.motto}”</div>
         <div class="fac-desc">${f.desc}</div>
         <div class="fac-lock">
-          <div class="fac-lock-head"><span class="lock-badge">LOCKED</span><b>${u.text}</b></div>
-          <div class="fac-lock-hint">${f.unlock.hint} Progress counts across every faction.</div>
-          <div class="fac-lock-bar"><div style="width:${u.frac * 100}%"></div></div>
-          <div class="fac-lock-num">${u.have} / ${u.need}</div>
+          <div class="fac-lock-head"><span class="lock-badge">LOCKED</span><span class="fac-lock-hint">${f.unlock.hint}</span></div>
+          ${u.requires.map((r) => `<div class="fac-req ${r.done ? 'done' : ''}">${r.done ? '✓' : '🔒'} Unlock <b>${r.name}</b> first</div>`).join('')}
+          ${u.goals.map((gl) => `<div class="fac-goal ${gl.done ? 'done' : ''}">
+            <div class="fac-goal-row"><b>${gl.done ? '✓ ' : ''}${gl.text}</b><span class="fac-scope">${gl.single ? 'one timeline' : 'lifetime'}</span></div>
+            <div class="fac-lock-bar"><div style="width:${gl.frac * 100}%"></div></div>
+            <div class="fac-lock-num">${gl.have} / ${gl.need}</div>
+          </div>`).join('')}
         </div>
         <div class="fac-foot"><span>Ability: ${f.ability.name}</span>${diff}</div>
       </button>`;
@@ -372,7 +375,7 @@ export class UI {
     $('over-unlocks').innerHTML = unlocked.map((fid) => {
       const f = FACTIONS[fid];
       return `<div class="unlock-card" style="--fc:${f.color}"><img class="emblem" src="${emblemFor(f, UNITS[f.emblem])}" alt="">
-        <div><div class="kicker">NEW FACTION UNLOCKED</div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.doctrine} · ${f.unlock.text}</div></div></div>`;
+        <div><div class="kicker">NEW FACTION UNLOCKED</div><div class="fac-name">${f.name}</div><div class="fac-nation">${f.doctrine} · ${unlockSummary(fid)}</div></div></div>`;
     }).join('');
     $('btn-over-lab').textContent = unlocked.length ? 'CHOOSE YOUR NEXT FACTION' : 'ENTER THE CHRONO LAB';
     this.overNext = unlocked.length ? 'factions' : 'lab';

@@ -92,19 +92,32 @@ export function isFactionUnlocked(meta, fid) {
   return !FACTIONS[fid].unlock || meta.unlocked.includes(fid);
 }
 
+// Goal-by-goal progress for a locked faction, plus its prerequisite factions.
 export function unlockProgress(meta, fid) {
   const u = FACTIONS[fid].unlock;
   if (!u) return null;
-  const have = milestoneValue(meta, u.stat);
-  return { have: Math.min(have, u.need), need: u.need, frac: Math.min(1, have / u.need), text: u.text };
+  const goals = u.goals.map((g) => {
+    const have = milestoneValue(meta, g.stat);
+    return { ...g, have: Math.min(have, g.need), frac: Math.min(1, have / g.need), done: have >= g.need, single: MILESTONES[g.stat].mode === 'max' };
+  });
+  const requires = (u.requires || []).map((id) => ({ id, name: FACTIONS[id].name, done: isFactionUnlocked(meta, id) }));
+  return { goals, requires, done: goals.every((g) => g.done) && requires.every((r) => r.done) };
+}
+
+export function unlockSummary(fid) {
+  return FACTIONS[fid].unlock.goals.map((g) => g.text).join(' · ');
 }
 
 // Locked factions a running game should watch, so it can announce an unlock mid-run.
 export function unlockWatchList(meta) {
   return FACTION_ORDER.filter((fid) => !isFactionUnlocked(meta, fid)).map((fid) => {
     const u = FACTIONS[fid].unlock;
-    const m = MILESTONES[u.stat];
-    return { id: fid, name: FACTIONS[fid].name, need: u.need, have: milestoneValue(meta, u.stat), fromRun: m.fromRun, mode: m.mode };
+    return {
+      id: fid,
+      name: FACTIONS[fid].name,
+      requires: (u.requires || []).filter((r) => !isFactionUnlocked(meta, r)),
+      goals: u.goals.map((g) => ({ need: g.need, have: milestoneValue(meta, g.stat), fromRun: MILESTONES[g.stat].fromRun, mode: MILESTONES[g.stat].mode })),
+    };
   });
 }
 
@@ -119,13 +132,17 @@ export function recordMilestones(meta, game) {
 
 export function refreshUnlocks(meta) {
   const fresh = [];
-  for (const fid of FACTION_ORDER) {
-    if (isFactionUnlocked(meta, fid)) continue;
-    const u = FACTIONS[fid].unlock;
-    // anyone who already played a faction (older saves) keeps it
-    if (milestoneValue(meta, u.stat) >= u.need || meta.profiles[fid]?.runs > 0) {
-      meta.unlocked.push(fid);
-      fresh.push(fid);
+  // repeat so a chain (e.g. Swarm -> Ghostnet) can resolve in one pass
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const fid of FACTION_ORDER) {
+      if (isFactionUnlocked(meta, fid)) continue;
+      // anyone who already played a faction (older saves) keeps it
+      if (unlockProgress(meta, fid).done || meta.profiles[fid]?.runs > 0) {
+        meta.unlocked.push(fid);
+        fresh.push(fid);
+        changed = true;
+      }
     }
   }
   return fresh;
