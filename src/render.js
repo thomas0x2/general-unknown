@@ -6,6 +6,27 @@ import { unitSprite, buildingBase, drawBuildingTop, ANIMATED_UNITS, BUILDING_MAR
 import { BUILD_RADIUS } from './game.js';
 import { mulberry32 } from './rng.js';
 
+// Blue blueprint silhouette of a building sprite, with a light edge outline (cached per sprite).
+const blueprints = new WeakMap();
+function blueprintOf(base) {
+  let c = blueprints.get(base);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = base.width; c.height = base.height;
+  const x = c.getContext('2d');
+  x.drawImage(base, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = '#4a9ae0'; x.fillRect(0, 0, c.width, c.height);
+  x.globalCompositeOperation = 'luminosity';
+  x.globalAlpha = 0.55;
+  x.drawImage(base, 0, 0);
+  x.globalCompositeOperation = 'destination-in';
+  x.globalAlpha = 1;
+  x.drawImage(base, 0, 0);
+  blueprints.set(base, c);
+  return c;
+}
+
 const WORLD_W = MAP_W * TILE, WORLD_H = MAP_H * TILE;
 const TERRAIN_RGB = {
   [T_PLAIN]: [40, 54, 41],
@@ -569,7 +590,13 @@ export class Renderer {
       if (b.team === TEAM_ENEMY && !b.discovered) continue;
       const show = sel.has(b) || this.hover === b || b.hp < b.st.maxHp * 0.999 || !b.built;
       if (show && (b.team === TEAM_PLAYER || b.visible)) this.drawBar(ctx, b.x, b.y - b.h * TILE / 2 - 6, b.w * TILE * 0.8, b.hp / b.st.maxHp, b.team);
-      if (!b.built) this.drawBar(ctx, b.x, b.y - b.h * TILE / 2 - 1, b.w * TILE * 0.8, b.progress, 2);
+      if (!b.built) {
+        const by = b.y - b.h * TILE / 2 - 1 - BUILDING_MARGIN.up * 0.55;
+        this.drawBar(ctx, b.x, by, b.w * TILE * 0.8, b.progress, 2);
+        ctx.fillStyle = '#ffd76a'; ctx.font = `bold ${Math.max(9, 10 / this.cam.zoom)}px monospace`; ctx.textAlign = 'center';
+        ctx.fillText(`${Math.floor(b.progress * 100)}%`, b.x, by - 4);
+        ctx.textAlign = 'start';
+      }
       if (b.team === TEAM_PLAYER && (b.repairActive || b.repairing)) this.drawRepairIcon(ctx, b);
       if (b.queue?.length) this.drawBar(ctx, b.x, b.y + b.h * TILE / 2 + 4, b.w * TILE * 0.7, b.queue[0].t / g.timeOf(b.queue[0].type, false), 3);
     }
@@ -723,24 +750,119 @@ export class Renderer {
     ctx.closePath(); ctx.stroke();
   }
 
+  // Construction site: dug plot and hazard tape, the finished structure as a blueprint,
+  // the real building rising from the ground behind a glowing build line with welding sparks,
+  // scaffolding around the unfinished part and a tower crane on larger sites.
+  drawConstruction(ctx, b, P, base) {
+    const M = BUILDING_MARGIN, W = b.w * TILE, H = b.h * TILE, p = Math.max(0, Math.min(1, b.progress));
+    const t = this.time + b.id * 1.7;
+    const sw = W + M.side * 2, sh = H + M.up + M.side;
+    // 1. ground works: excavated plot with tyre tracks
+    ctx.fillStyle = '#4f4130';
+    ctx.beginPath(); ctx.roundRect(1, 1, W - 2, H - 2, 3); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,24,16,0.35)'; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let k = 6; k < W - 3; k += 11) { ctx.moveTo(k, 3); ctx.lineTo(k + 3, H - 3); }
+    ctx.stroke();
+    // 2. blueprint of the finished building
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(blueprintOf(base), -M.side, -M.up, sw, sh);
+    ctx.restore();
+    // 3. the real building, revealed from the ground up (the footprint's south edge is ground level)
+    const top = -M.up, ground = H;
+    const edge = ground - (ground - top) * p;
+    if (p > 0.01) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(-M.side, edge, sw, ground + M.side - edge); ctx.clip();
+      ctx.drawImage(base, -M.side, -M.up, sw, sh);
+      ctx.restore();
+    }
+    // 4. scaffolding: poles around the unfinished part, ledgers on the front face
+    if (p < 0.97) {
+      const sTop = Math.max(-M.up * 0.5, edge - 3);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(-6, -M.up, W + 12, sTop + M.up); ctx.clip();
+      ctx.strokeStyle = 'rgba(200,204,206,0.7)'; ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      const y0 = -M.up * 0.5;
+      ctx.rect(-2.5, y0, W + 5, H - y0 + 0.5);
+      for (let x = -2.5; x <= W + 2.5; x += 10) { ctx.moveTo(x, H - 1); ctx.lineTo(x, H - 13); }
+      for (let y = H - 5; y > H - 14; y -= 4) { ctx.moveTo(-2.5, y); ctx.lineTo(W + 2.5, y); }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(160,164,166,0.55)'; ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      for (let x = -2.5; x < W; x += 20) { ctx.moveTo(x, H - 1); ctx.lineTo(x + 10, H - 13); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(220,224,226,0.85)';
+      for (let x = -2.5; x <= W + 2.5; x += 10) { ctx.fillRect(x - 1, y0 - 1, 2, 2); ctx.fillRect(x - 1, H - 1, 2, 2); }
+      ctx.restore();
+    }
+    // build line + welding sparks
+    if (p < 1) {
+      const g = ctx.createLinearGradient(0, edge - 4, 0, edge + 4);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, P.main); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55 + Math.sin(t * 6) * 0.2;
+      ctx.fillStyle = g; ctx.fillRect(1, edge - 4, W - 2, 8);
+      for (let i = 0; i < 3; i++) {
+        const ph = Math.floor(t * 7 + i * 13.7);
+        const r = ((ph * 9301 + 49297) % 233280) / 233280;
+        if (((ph * 7 + i) % 3) === 0) continue;
+        const sx = 4 + r * (W - 8), sy = Math.min(H - 3, edge + (r - 0.5) * 3);
+        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 5);
+        sg.addColorStop(0, 'rgba(255,255,255,0.95)'); sg.addColorStop(0.35, 'rgba(255,200,120,0.8)'); sg.addColorStop(1, 'rgba(255,140,40,0)');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+    // 5. hazard tape around the site
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#d6b23a'; ctx.strokeRect(-1, -1, W + 2, H + 2);
+    ctx.strokeStyle = '#1b1b1b'; ctx.setLineDash([4, 4]); ctx.lineDashOffset = -t * 6; ctx.strokeRect(-1, -1, W + 2, H + 2);
+    ctx.restore();
+    // 6. tower crane on bigger sites
+    if (b.w >= 2) {
+      const mx = W - 5, my = H - 5;
+      const jib = Math.max(W, H) * 1.05, a = -Math.PI * 0.75 + Math.sin(t * 0.5) * 0.7;
+      ctx.save();
+      ctx.translate(mx, my - 18);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(4, 18, 6, 6);
+      ctx.strokeStyle = '#d6b23a'; ctx.lineWidth = 1;
+      ctx.strokeRect(-3, 0, 6, 18);
+      ctx.beginPath(); for (let y = 0; y < 18; y += 3) { ctx.moveTo(-3, y); ctx.lineTo(3, y + 3); } ctx.stroke();
+      ctx.rotate(a);
+      ctx.fillStyle = '#d6b23a';
+      ctx.fillRect(-10, -1.6, jib + 10, 3.2);
+      ctx.fillStyle = '#7a7c7a'; ctx.fillRect(-12, -3, 6, 6); // counterweight
+      ctx.strokeStyle = '#8a6a1a'; ctx.lineWidth = 0.6;
+      ctx.beginPath(); for (let x = -8; x < jib; x += 4) { ctx.moveTo(x, -1.6); ctx.lineTo(x + 2, 1.6); } ctx.stroke();
+      const hook = jib * (0.55 + Math.sin(t * 0.8) * 0.25);
+      ctx.strokeStyle = 'rgba(30,30,30,0.8)'; ctx.beginPath(); ctx.moveTo(hook, 0); ctx.lineTo(hook, 6); ctx.stroke();
+      ctx.fillStyle = '#6b5a3a'; ctx.fillRect(hook - 3, 6, 6, 3);
+      ctx.fillStyle = '#2a2d2f'; ctx.fillRect(-2, -2, 4, 4); // cab
+      ctx.restore();
+    }
+  }
+
   drawBuilding(ctx, b, selected) {
     const P = teamPalette(b.team === TEAM_PLAYER ? 0 : 1);
     ctx.save();
     ctx.translate(b.tx * TILE, b.ty * TILE);
-    if (!b.built) ctx.globalAlpha = 0.45 + 0.35 * b.progress;
-    if (b.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 8; }
     const base = buildingBase(b.def.shape, P, b.w, b.h), M = BUILDING_MARGIN;
-    ctx.drawImage(base, -M.side, -M.up, b.w * TILE + M.side * 2, b.h * TILE + M.up + M.side);
-    ctx.shadowBlur = 0;
-    drawBuildingTop(ctx, b.def.shape, P, b.w, b.h, this.time + b.id, b.angle);
     if (!b.built) {
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let k = -b.h * TILE; k < b.w * TILE; k += 8) { ctx.moveTo(k, b.h * TILE); ctx.lineTo(k + b.h * TILE, 0); }
-      ctx.stroke();
+      this.drawConstruction(ctx, b, P, base);
+      ctx.restore();
+    } else {
+      if (b.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 8; }
+      ctx.drawImage(base, -M.side, -M.up, b.w * TILE + M.side * 2, b.h * TILE + M.up + M.side);
+      ctx.shadowBlur = 0;
+      drawBuildingTop(ctx, b.def.shape, P, b.w, b.h, this.time + b.id, b.angle);
+      ctx.restore();
     }
-    ctx.restore();
     if (b.stunUntil > this.game.time) this.drawStun(ctx, b.x, b.y, b.radius);
     if (selected) {
       ctx.strokeStyle = 'rgba(120,255,170,0.9)'; ctx.lineWidth = 1.5 / this.cam.zoom + 0.5;
